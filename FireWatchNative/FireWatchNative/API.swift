@@ -181,17 +181,23 @@ final class API: ObservableObject {
         return result
     }
 
-    func addCamera(name: String, streamURL: String, lat: Double, lon: Double) async throws {
+    func addCamera(name: String, streamURL: String, lat: Double, lon: Double) async throws -> Camera {
         struct Payload: Encodable { let name: String; let url: String; let lat: Double; let lon: Double }
         let payload = Payload(name: name, url: streamURL, lat: lat, lon: lon)
-        let _: Camera = try await request("/cameras", method: "POST",
+        let created: Camera = try await request("/cameras", method: "POST",
             body: JSONEncoder().encode(payload), contentType: "application/json")
         await refresh()
+        return cameras.first(where: { $0.id == created.id }) ?? created
     }
 
-    func checkCamera(_ camera: Camera) async throws {
-        let _: Camera = try await request("/cameras/\(camera.id)/check", method: "POST")
+    func checkCamera(_ camera: Camera) async throws -> Camera {
+        let checked: Camera = try await request("/cameras/\(camera.id)/check", method: "POST")
         await refresh()
+        return cameras.first(where: { $0.id == camera.id }) ?? checked
+    }
+
+    func fetchCameraCandidates() async throws -> [CameraCandidate] {
+        try await request("/camera-candidates")
     }
 
     func deleteCamera(_ camera: Camera) async throws {

@@ -19,7 +19,8 @@ def test_docs_available(client):
     for path in ["/health", "/cameras", "/incidents", "/incidents/{incident_id}",
                  "/detect", "/register_device", "/simulate_fire",
                  "/cameras/{camera_id}/analyze", "/incidents/{incident_id}/status",
-                 "/monitoring/status", "/monitoring/start", "/monitoring/stop"]:
+                 "/monitoring/status", "/monitoring/start", "/monitoring/stop",
+                 "/camera-candidates"]:
         assert path in spec["paths"], path
 
 
@@ -537,3 +538,13 @@ def test_auto_monitoring_creates_one_incident_for_real_fire(tmp_path, monkeypatc
         assert monitor_client.app.state.db.detection_stats()["total"] == 1
 
         monitor_client.post("/monitoring/stop")
+
+
+def test_public_kazakhstan_camera_candidates_are_unverified_and_attributed(client):
+    response = client.get("/camera-candidates")
+    assert response.status_code == 200
+    candidates = response.json()
+    assert len(candidates) >= 5
+    assert all(item["verified"] is False for item in candidates)
+    assert all(item["source_url"] and item["catalog_url"] for item in candidates)
+    assert all(item["url"].startswith("https://") and ".m3u8" in item["url"] for item in candidates)

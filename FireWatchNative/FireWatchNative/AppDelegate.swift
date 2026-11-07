@@ -46,8 +46,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
     ) {
         completionHandler([.banner, .sound, .badge])
     }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if let incidentID = response.notification.request.content.userInfo["incident_id"] as? String {
+            NotificationCenter.default.post(
+                name: .fireWatchOpenIncident,
+                object: nil,
+                userInfo: ["incident_id": incidentID]
+            )
+        }
+        completionHandler()
+    }
 }
 
 extension Notification.Name {
     static let fireWatchFCMTokenUpdated = Notification.Name("FireWatchFCMTokenUpdated")
+    static let fireWatchOpenIncident = Notification.Name("FireWatchOpenIncident")
 }

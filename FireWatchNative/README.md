@@ -48,7 +48,7 @@ For a trusted local development network, the API key can remain empty. Before ex
 2. Enter the same value in the iOS app's **API key** field. It is stored in the iOS Keychain.
 3. Use HTTPS through a properly configured reverse proxy. Do not expose a development Uvicorn server directly to the public internet.
 
-`/health` is intentionally unauthenticated for basic connectivity diagnostics. Other API routes require `X-API-Key` when `API_ACCESS_TOKEN` is configured.
+All API routes, including `/health`, require `X-API-Key` when `API_ACCESS_TOKEN` is configured. The iOS client sends the key from Keychain for diagnostics and data requests.
 
 ## 4. Camera workflow
 

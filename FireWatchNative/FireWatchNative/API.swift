@@ -44,28 +44,28 @@ final class API: ObservableObject {
     }
 
     func checkCamera(_ camera: Camera) async throws {
-        let _: Camera = try await send("/cameras/\\(camera.id)/check", method: "POST")
+        let _: Camera = try await send("/cameras/\(camera.id)/check", method: "POST")
         await refresh()
     }
 
     func deleteCamera(_ camera: Camera) async throws {
         struct Result: Decodable { let ok: Bool }
-        let _: Result = try await send("/cameras/\\(camera.id)", method: "DELETE")
+        let _: Result = try await send("/cameras/\(camera.id)", method: "DELETE")
         await refresh()
     }
 
 
     func detect(jpeg: Data) async throws -> DetectionSummary {
         guard let base = URL(string: baseURL), let url = URL(string: "/detect", relativeTo: base) else { throw URLError(.badURL) }
-        let boundary = "FireWatch-\\(UUID().uuidString)"
+        let boundary = "FireWatch-\(UUID().uuidString)"
         var body = Data()
-        body.append(Data("--\\(boundary)\\r\\nContent-Disposition: form-data; name=\\"file\\"; filename=\\"image.jpg\\"\\r\\nContent-Type: image/jpeg\\r\\n\\r\\n".utf8))
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
         body.append(jpeg)
-        body.append(Data("\\r\\n--\\(boundary)--\\r\\n".utf8))
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 90
-        request.setValue("multipart/form-data; boundary=\\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         return try JSONDecoder().decode(DetectionSummary.self, from: data)

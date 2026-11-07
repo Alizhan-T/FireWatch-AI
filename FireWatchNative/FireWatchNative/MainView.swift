@@ -13,6 +13,7 @@ struct MainView: View {
             map.tabItem { Label("Карта", systemImage: "map.fill") }
             incidents.tabItem { Label("События", systemImage: "flame.fill") }
             CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }
+            DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles.rectangle.stack") }
             settings.tabItem { Label("Настройки", systemImage: "gearshape.fill") }
         }
         .tint(Palette.accent)

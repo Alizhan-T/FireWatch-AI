@@ -1,0 +1,29 @@
+# Python
+backend/.venv/
+backend/.env
+backend/data/
+backend/media/
+backend/static/clips/
+backend/firebase-service-account*.json
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/ephemeral/
+mobile/macos/Flutter/ephemeral/
+mobile/linux/flutter/ephemeral/
+mobile/windows/flutter/ephemeral/
+mobile/ios/Runner/GoogleService-Info.plist
+
+# Node / IDE
+.idea/
+node_modules/
+index.js
+package.json
+.DS_Store

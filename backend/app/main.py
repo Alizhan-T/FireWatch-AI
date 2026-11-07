@@ -418,6 +418,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         source_url = "https://cam.xcom.kz/"
         catalog_url = "https://pocketworld.org/ru/webcams/country/kz"
+        stream_list_url = "https://pikniktv.info/viewtopic.php?start=50&t=9395"
         rows = [
             ("aktau-caspian-14", "Актау — Каспий, 14-й микрорайон",
              "https://cam.xcom.kz:8081/caspy14/tracks-v1/mono.m3u8", 43.6545, 51.1385),
@@ -436,7 +437,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {"id": item[0], "name": item[1], "url": item[2], "lat": item[3],
              "lon": item[4], "source_name": "XCOM Aktau",
              "source_url": source_url, "catalog_url": catalog_url,
-             "verification_note": source_note, "verified": False}
+             "stream_list_url": stream_list_url, "verification_note": source_note, "verified": False}
             for item in rows
         ]
 

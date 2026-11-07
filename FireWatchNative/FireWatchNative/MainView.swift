@@ -167,6 +167,9 @@ struct MainView: View {
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
+                    SecureField("API key (если включён на сервере)", text: $api.apiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                     Button("Сохранить и проверить") {
                         do {
                             try api.saveURL()

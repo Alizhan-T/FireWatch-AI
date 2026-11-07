@@ -67,11 +67,3 @@ struct DetectionView: View {
         }
     }
 }
-
-struct DetectionSummary: Decodable {
-    let classification: String
-    let confidence: Double
-    let mode: String
-    let model_name: String
-    let disclaimer: String
-}

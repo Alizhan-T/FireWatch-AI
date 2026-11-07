@@ -60,6 +60,8 @@ All API routes, including `/health`, require `X-API-Key` when `API_ACCESS_TOKEN`
 
 The URL must be reachable from the Mac/server, not merely from the iPhone. Some public providers use expiring tokens, embed-only players, geo restrictions or terms that prohibit redistribution/automated analysis. Do not bypass authentication, access controls or operator restrictions.
 
+The iOS **Cameras** screen also offers six unverified HLS candidates from the public Aktau/XCOM listings. Selecting **Add and check** saves the source and immediately tests it through FFmpeg. The candidate list is a starting point only: feeds may have changed, and city/coast cameras are not a substitute for dedicated forest lookout cameras. Confirm the operator's permission before enabling AI analysis.
+
 ### Public Kazakhstan camera directory
 
 The app links to [PocketWorld's Kazakhstan webcam directory](https://pocketworld.org/ru/webcams/country/kz). Its published catalogue currently lists 21 Kazakhstan entries, including HLS, YouTube and operator-player formats. This is a discovery directory, not a verified uptime monitor: a catalogue entry does not guarantee that a stream is currently online or that the operator permits AI processing. Check the source and its terms before adding a direct feed.

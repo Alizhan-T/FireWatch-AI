@@ -9,14 +9,16 @@ struct MainView: View {
     @StateObject private var api = API()
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
+    @State private var selectedTab = 0
+    @State private var pushIncident: Incident?
 
     var body: some View {
-        TabView {
-            dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }
-            map.tabItem { Label("Карта", systemImage: "map.fill") }
-            incidents.tabItem { Label("События", systemImage: "flame.fill") }
-            CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }
-            DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }
+        TabView(selection: $selectedTab) {
+            dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }.tag(0)
+            map.tabItem { Label("Карта", systemImage: "map.fill") }.tag(1)
+            incidents.tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
+            CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }.tag(3)
+            DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
         .tint(Palette.accent)
         .task {
@@ -31,6 +33,17 @@ struct MainView: View {
                 do { try await api.registerDevice(token: token) }
                 catch { api.error = error.localizedDescription }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fireWatchOpenIncident)) { notification in
+            guard let id = notification.userInfo?["incident_id"] as? String else { return }
+            selectedTab = 2
+            Task {
+                do { pushIncident = try await api.fetchIncident(id: id) }
+                catch { api.error = error.localizedDescription }
+            }
+        }
+        .sheet(item: $pushIncident) { incident in
+            NavigationStack { IncidentDetailView(api: api, incident: incident) }
         }
     }
 

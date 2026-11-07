@@ -20,7 +20,7 @@ mobile/macos/Flutter/ephemeral/
 mobile/linux/flutter/ephemeral/
 mobile/windows/flutter/ephemeral/
 mobile/ios/Runner/GoogleService-Info.plist
-FireWatchNative/GoogleService-Info.plist
+FireWatchNative/FireWatchNative/GoogleService-Info.plist
 
 # Node / IDE
 .idea/

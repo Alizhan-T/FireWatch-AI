@@ -6,12 +6,12 @@ Native iPhone client for the FireWatch-AI FastAPI + YOLO backend. The native cli
 
 Install XcodeGen on macOS:
 
-\`\`\`bash
+```bash
 brew install xcodegen
 cd FireWatchNative
 xcodegen generate
 open FireWatchNative.xcodeproj
-\`\`\`
+```
 
 In Xcode:
 1. Select the **FireWatchNative** scheme.
@@ -23,7 +23,7 @@ The deployment target is iOS 17+. The GitHub Actions workflow generates the Xcod
 
 ## 2. Start the backend on your Mac
 
-\`\`\`bash
+```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
@@ -31,29 +31,29 @@ pip install -r requirements.txt
 cp .env.example .env
 brew install ffmpeg
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-\`\`\`
+```
 
-The first start may take longer while the Python dependencies and YOLO runtime are prepared. The model weights are in \`backend/models/fire_smoke_yolov8n.pt\`. The app's dashboard shows whether the server loaded \`real_model\` or fell back to \`demo_heuristic\`. A heuristic result is explicitly a demo and must not be treated as a confirmed fire.
+The first start may take longer while the Python dependencies and YOLO runtime are prepared. The model weights are in `backend/models/fire_smoke_yolov8n.pt`. The app's dashboard shows whether the server loaded `real_model` or fell back to `demo_heuristic`. A heuristic result is explicitly a demo and must not be treated as a confirmed fire.
 
 Find your Mac's Wi-Fi IP in **System Settings → Wi-Fi → Details**. In the iPhone app open **Settings** and enter:
 
-\`http://YOUR_MAC_LAN_IP:8000\`
+`http://YOUR_MAC_LAN_IP:8000`
 
-Do not use \`localhost\` or \`127.0.0.1\` on the iPhone; those addresses refer to the phone itself. The Mac and iPhone must be on the same network, and macOS Firewall must allow incoming connections to Python/Uvicorn.
+Do not use `localhost` or `127.0.0.1` on the iPhone; those addresses refer to the phone itself. The Mac and iPhone must be on the same network, and macOS Firewall must allow incoming connections to Python/Uvicorn.
 
 ## 3. Protect the backend
 
 For a trusted local development network, the API key can remain empty. Before exposing the backend beyond your private network:
-1. Put a long random value in \`API_ACCESS_TOKEN\` in \`backend/.env\`.
+1. Put a long random value in `API_ACCESS_TOKEN` in `backend/.env`.
 2. Enter the same value in the iOS app's **API key** field. It is stored in the iOS Keychain.
 3. Use HTTPS through a properly configured reverse proxy. Do not expose a development Uvicorn server directly to the public internet.
 
-\`/health\` is intentionally unauthenticated for basic connectivity diagnostics. Other API routes require \`X-API-Key\` when \`API_ACCESS_TOKEN\` is configured.
+`/health` is intentionally unauthenticated for basic connectivity diagnostics. Other API routes require `X-API-Key` when `API_ACCESS_TOKEN` is configured.
 
 ## 4. Camera workflow
 
 1. Use a camera URL supplied by its owner/operator or a public source that explicitly permits viewing and automated analysis.
-2. Open **Cameras → +**, enter a name, direct HLS (\`.m3u8\`) or RTSP URL and the camera's actual coordinates.
+2. Open **Cameras → +**, enter a name, direct HLS (`.m3u8`) or RTSP URL and the camera's actual coordinates.
 3. Open the camera and select **Check stream via FFmpeg**. The backend tries to capture a real frame and records online/offline status.
 4. Select **Analyze frame with AI** to capture one frame and run the configured detector. A detection can create an incident that is marked as demo if the backend is using the heuristic fallback.
 5. iPhone AVPlayer can play supported HLS URLs. RTSP is checked and analyzed on the backend; iOS AVPlayer does not play RTSP directly.
@@ -66,8 +66,8 @@ The app links to [PocketWorld's Kazakhstan webcam directory](https://pocketworld
 
 ## 5. AI detection and incidents
 
-- **AI tab:** choose a photo and upload it to \`POST /detect\`.
-- **Camera detail:** manually capture and analyze one frame through \`POST /cameras/{camera_id}/analyze\`.
+- **AI tab:** choose a photo and upload it to `POST /detect`.
+- **Camera detail:** manually capture and analyze one frame through `POST /cameras/{camera_id}/analyze`.
 - **Incidents:** open a record, review its source/model/evidence, and change its status to new, acknowledged, resolved or false alarm.
 - **Map:** shows incident and configured-camera coordinates.
 - Demo, simulated and heuristic results are labelled; every suspected fire still requires human verification.
@@ -77,12 +77,12 @@ There is no continuous 24/7 camera scanning worker in this version. Camera analy
 ## 6. Push notifications (optional setup)
 
 Push is disabled until you configure your own Firebase project:
-1. Create an iOS app in Firebase with bundle ID \`kz.firewatch.native\`.
-2. Download \`GoogleService-Info.plist\` and place it in this \`FireWatchNative/\` folder so XcodeGen includes it in the app bundle. The file is ignored by Git and must not be committed.
+1. Create an iOS app in Firebase with bundle ID `kz.firewatch.native`.
+2. Download `GoogleService-Info.plist` and place it in this `FireWatchNative/` folder so XcodeGen includes it in the app bundle. The file is ignored by Git and must not be committed.
 3. In Apple Developer, configure an APNs authentication key and upload it to Firebase Cloud Messaging.
 4. In Xcode, enable **Push Notifications** capability for the app's App ID and provisioning profile.
-5. In \`backend/.env\`, set \`FIREBASE_CREDENTIALS\` to the path of a Firebase Admin service-account JSON file. Never commit that file.
-6. Re-run \`xcodegen generate\`, build and run. In app Settings, request notification permission.
+5. In `backend/.env`, set `FIREBASE_CREDENTIALS` to the path of a Firebase Admin service-account JSON file. Never commit that file.
+6. Re-run `xcodegen generate`, build and run. In app Settings, request notification permission.
 
 The iOS FCM token is registered with the backend after permission is granted. A successful local build alone does not mean APNs/FCM delivery is configured.
 

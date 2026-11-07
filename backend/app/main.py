@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request,
                      UploadFile)
@@ -269,11 +270,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "model_name": detector.model_name, "disclaimer": detector.disclaimer,
                 "fallback_reason": detector_fallback_reason}
 
+    def safe_camera_url(raw_url: str) -> str:
+        """Не возвращать RTSP userinfo с логином/паролем в API-ответах."""
+        parts = urlsplit(raw_url)
+        if not parts.username and not parts.password:
+            return raw_url
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
     def camera_with_status(cam: dict) -> dict:
         st = db.get_camera_status(cam["id"]) or {}
         snap = st.get("snapshot_path")
         return {
             **cam,
+            "url": safe_camera_url(cam["url"]),
             "status": st.get("status", "unchecked"),
             "last_checked_at": st.get("last_checked_at"),
             "last_frame_at": st.get("last_frame_at"),

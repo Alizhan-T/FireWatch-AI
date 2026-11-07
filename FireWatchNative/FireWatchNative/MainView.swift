@@ -129,7 +129,10 @@ struct MainView: View {
 
     private var map: some View {
         NavigationStack {
-            Map {
+            Map(initialPosition: .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 48.0196, longitude: 66.9237),
+                span: MKCoordinateSpan(latitudeDelta: 15, longitudeDelta: 30)
+            ))) {
                 ForEach(api.incidents) { incident in
                     Annotation(incident.title, coordinate: CLLocationCoordinate2D(latitude: incident.lat, longitude: incident.lon)) {
                         Image(systemName: "flame.fill")

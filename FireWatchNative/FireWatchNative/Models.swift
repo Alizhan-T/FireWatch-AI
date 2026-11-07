@@ -82,6 +82,19 @@ struct ServerHealth: Decodable {
     let server_time: String?
 }
 
+struct CameraCandidate: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let url: String
+    let lat: Double
+    let lon: Double
+    let source_name: String
+    let source_url: String
+    let catalog_url: String
+    let verification_note: String
+    let verified: Bool
+}
+
 struct MonitoringStatus: Decodable {
     let enabled: Bool?
     let active: Bool?

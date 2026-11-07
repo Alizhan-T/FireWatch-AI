@@ -58,7 +58,7 @@ class Settings:
     env_mode: str = field(
         default_factory=lambda: os.getenv("ENV_MODE", "local_dev").strip().lower()
     )
-    host: str = field(default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip())
+    host: str = field(default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip())\n    api_access_token: str = field(default_factory=lambda: os.getenv("API_ACCESS_TOKEN", "").strip())
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
 
     database_path: Path = field(

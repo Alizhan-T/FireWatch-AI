@@ -12,7 +12,7 @@ struct MainView: View {
             dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }
             map.tabItem { Label("Карта", systemImage: "map.fill") }
             incidents.tabItem { Label("События", systemImage: "flame.fill") }
-            cameras.tabItem { Label("Камеры", systemImage: "video.fill") }
+            CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }
             settings.tabItem { Label("Настройки", systemImage: "gearshape.fill") }
         }
         .tint(Palette.accent)

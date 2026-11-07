@@ -19,6 +19,8 @@ targets:
     platform: iOS
     dependencies:
       - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
         product: FirebaseMessaging
     sources:
       - path: FireWatchNative

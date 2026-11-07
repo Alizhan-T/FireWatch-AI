@@ -21,7 +21,7 @@ if [ ! -d .venv ]; then
 fi
 
 # 2. Проверка обязательных Python-пакетов
-if ! .venv/bin/python -c "import fastapi, uvicorn, PIL, pydantic_settings" >/dev/null 2>&1; then
+if ! .venv/bin/python -c "import fastapi, uvicorn, PIL, pydantic, dotenv" >/dev/null 2>&1; then
   echo "⚙️  Установка недостающих зависимостей из requirements.txt..."
   .venv/bin/pip install -r requirements.txt
 fi
@@ -48,12 +48,11 @@ fi
 LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1")
 PORT="${FIREWATCH_PORT:-8000}"
 
-# 7. Проверка занятости порта 8000 и очистка зависших процессов
+# 7. Не завершаем чужой процесс на занятом порту.
 EXISTING_PIDS=$(lsof -ti tcp:"${PORT}" 2>/dev/null || true)
 if [ -n "${EXISTING_PIDS}" ]; then
-  echo "🔄 Порт ${PORT} занят (PID: ${EXISTING_PIDS}). Завершаем предыдущий экземпляр..."
-  kill ${EXISTING_PIDS} 2>/dev/null || true
-  sleep 1
+  echo "❌ Порт ${PORT} занят. Остановите предыдущий сервер или задайте FIREWATCH_PORT."
+  exit 1
 fi
 
 echo "--------------------------------------------------------"
@@ -79,7 +78,7 @@ trap cleanup EXIT INT TERM
 UVICORN_PID=$!
 
 for i in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+  if curl -fsS "http://127.0.0.1:${PORT}/live" >/dev/null 2>&1; then
     echo "✅ Backend готов к работе и отвечает на http://${LAN_IP}:${PORT}/health"
     break
   fi

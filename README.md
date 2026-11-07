@@ -2,6 +2,9 @@
 
 **FireWatch AI** is a full-stack wildfire monitoring, computer vision fire/smoke detection, and incident response Minimum Viable Product (MVP) built for iOS.
 
+The current iPhone app is [FireWatchNative (SwiftUI)](FireWatchNative/README.md).
+See [server deployment and field checks](deploy/README.md) for Docker, HTTPS, API-key protection, push testing and 24-hour monitoring verification. The Flutter instructions below describe the earlier client.
+
 ---
 
 ## 1. Project Overview & Transparency Policy

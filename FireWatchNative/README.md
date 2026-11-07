@@ -30,7 +30,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 brew install ffmpeg
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 The first start may take longer while the Python dependencies and YOLO runtime are prepared. The model weights are in `backend/models/fire_smoke_yolov8n.pt`. The app's dashboard shows whether the server loaded `real_model` or fell back to `demo_heuristic`. A heuristic result is explicitly a demo and must not be treated as a confirmed fire.
@@ -48,7 +48,7 @@ For a trusted local development network, the API key can remain empty. Before ex
 2. Enter the same value in the iOS app's **API key** field. It is stored in the iOS Keychain.
 3. Use HTTPS through a properly configured reverse proxy. Do not expose a development Uvicorn server directly to the public internet.
 
-All API routes, including `/health`, require `X-API-Key` when `API_ACCESS_TOKEN` is configured. The iOS client sends the key from Keychain for diagnostics and data requests.
+All diagnostic/data routes, including `/health` and `/ready`, require `X-API-Key` when configured. Only the minimal `/live` process probe is public. The iOS client sends the key from Keychain. Production deployment and verification: [deployment guide](../deploy/README.md).
 
 ## 4. Camera workflow
 
@@ -103,6 +103,6 @@ Still requires deployment-specific setup and field verification:
 - Configure API key/HTTPS for any non-private network.
 - Configure Firebase/APNs for actual push delivery.
 - Test on the target iPhone, local Wi-Fi and cellular network.
-- Continuous scheduled monitoring, deduplication/escalation policy and production observability are not yet enabled.
+- Run the 24-hour camera check on the deployed host; continuous monitoring, confirmation and status endpoints are implemented, but field uptime is not yet verified.
 
 FireWatch AI is an operator-assistance tool, not a certified emergency dispatch system. Do not rely on it as the sole fire detection or emergency response mechanism.

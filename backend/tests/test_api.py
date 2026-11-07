@@ -508,6 +508,7 @@ def test_auto_monitoring_creates_one_incident_for_real_fire(tmp_path, monkeypatc
             )
 
     settings = Settings()
+    settings.camera_confirmation_frames = 1
     settings.database_path = tmp_path / "monitor-fire.db"
     settings.media_dir = tmp_path / "monitor-fire-media"
     settings.demo_assets_dir = tmp_path / "monitor-fire-demo"

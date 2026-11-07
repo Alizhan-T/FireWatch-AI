@@ -77,6 +77,9 @@ struct ServerHealth: Decodable {
     let camera_auto_scan_last_error: String?
     let camera_auto_scan_last_run_at: String?
     let camera_auto_scan_current_camera: String?
+    let camera_confirmation_frames: Int?
+    let camera_alert_min_confidence: Double?
+    let monitoring_metrics: [String: Int]?
     let cameras_configured: Int?
     let demo_videos_available: Int?
     let server_time: String?
@@ -127,4 +130,11 @@ struct DeviceRegistration: Decodable {
     let ok: Bool
     let devices: Int?
     let firebase: String?
+}
+
+struct PushTestResult: Decodable {
+    let enabled: Bool
+    let sent: Int
+    let failed: Int
+    let errors: [String]?
 }

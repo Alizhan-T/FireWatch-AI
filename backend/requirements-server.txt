@@ -1,0 +1,13 @@
+# Top-level versions exercised by the backend suite; CPU Torch is installed separately.
+fastapi==0.162.2
+uvicorn==0.54.0
+python-multipart==0.0.33
+pydantic==2.14.3
+python-dotenv==1.2.4
+pillow==13.0.0
+numpy==2.5.4
+firebase-admin==7.7.0
+ultralytics==8.4.206
+pi-heif==1.4.0
+httpx==0.28.1
+pytest==9.2.0

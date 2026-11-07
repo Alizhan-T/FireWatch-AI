@@ -21,6 +21,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNU
         UNUserNotificationCenter.current().delegate = self
         Self.firebaseConfigured = true
         PushManager.shared.setStatus("Firebase подключён. Разрешите уведомления в настройках приложения.")
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                application.registerForRemoteNotifications()
+            }
+        }
         return true
     }
 

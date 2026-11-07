@@ -10,6 +10,8 @@ struct MainView: View {
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
     @State private var monitoringBusy = false
+    @State private var pushTestBusy = false
+    @State private var pushTestMessage: String?
     @State private var selectedTab = 0
     @State private var pushIncident: Incident?
 
@@ -237,6 +239,21 @@ struct MainView: View {
                         Label("FCM-токен получен", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     }
+                    Button(pushTestBusy ? "Отправляем…" : "Отправить тестовое уведомление") {
+                        guard let token = pushManager.fcmToken else { return }
+                        pushTestBusy = true
+                        Task {
+                            defer { pushTestBusy = false }
+                            do {
+                                let result = try await api.testPush(token: token)
+                                pushTestMessage = result.sent > 0
+                                    ? "Firebase принял сообщение. Проверьте уведомление на iPhone."
+                                    : "Отправка не удалась: \(result.errors?.joined(separator: ", ") ?? "проверьте Firebase/APNs")"
+                            } catch { pushTestMessage = error.localizedDescription }
+                        }
+                    }
+                    .disabled(pushTestBusy || pushManager.fcmToken == nil || !api.isConnected)
+                    if let message = pushTestMessage { Text(message).font(.footnote) }
                     Text("Для push нужны Firebase-проект, GoogleService-Info.plist, APNs key в Firebase и capability Push Notifications в Xcode.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -253,6 +270,13 @@ struct MainView: View {
                     }
                     if let lastRun = api.health?.camera_auto_scan_last_run_at {
                         LabeledContent("Последняя проверка", value: lastRun)
+                    }
+                    if let frames = api.health?.camera_confirmation_frames {
+                        LabeledContent("Подтверждение тревоги", value: "\(frames) кадра подряд")
+                    }
+                    if let metrics = api.health?.monitoring_metrics {
+                        LabeledContent("Кадров проверено", value: "\(metrics["succeeded"] ?? 0)")
+                        LabeledContent("Ошибок проверки", value: "\(metrics["failed"] ?? 0)")
                     }
                     if let scanError = api.health?.camera_auto_scan_last_error, !scanError.isEmpty {
                         Text(scanError).font(.footnote).foregroundStyle(.orange)

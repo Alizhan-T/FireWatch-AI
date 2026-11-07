@@ -10,6 +10,7 @@ import random
 import shutil
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Ограничение одновременных тяжёлых задач (YOLO-инференс / FFmpeg), чтобы не исчерпать RAM.
     heavy_jobs = asyncio.Semaphore(max(1, settings.max_concurrent_jobs))
+    scanner_task: asyncio.Task | None = None
     duration_cache: dict[tuple[str, float, int], float] = {}
 
     # ---------------- helpers ----------------
@@ -317,6 +319,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "detector": detector_info(),
             "ffmpeg": capture.ffmpeg_available(),
             "firebase": push.status(),
+            "camera_auto_scan_enabled": settings.camera_auto_scan_enabled,
+            "camera_auto_scan_active": scanner_task is not None and not scanner_task.done(),
+            "camera_auto_scan_interval_sec": settings.camera_auto_scan_interval_sec,
             "cameras_configured": len(load_cameras()),
             "demo_videos_available": len(sync_demo_videos_dir()),
             "devices_registered": len(db.device_tokens()),
@@ -434,7 +439,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             db.link_detection(det_id, row["id"])
             incident_id = row["id"]
-            notify(to_incident(row), background)
+            if det["mode"] == "real_model":
+                notify(to_incident(row), background)
             det = db.get_detection(det_id) or det
 
         result = to_detection_result(det)
@@ -840,6 +846,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         options = "".join(f'<option value="{c["id"]}">{c["name"]}</option>'
                           for c in load_cameras().values())
         return _PANEL_HTML.replace("{{OPTIONS}}", options)
+
+    async def camera_auto_scan_loop() -> None:
+        """Опциональный цикл: анализирует подключённые камеры только реальной YOLO-моделью."""
+        while True:
+            try:
+                for cam in load_cameras().values():
+                    # Не создаём повторные активные тревоги по той же камере чаще одного раза в 10 минут.
+                    recent_active = False
+                    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+                    for incident in db.list_incidents(limit=500):
+                        if (incident.get("camera_id") != cam["id"]
+                                or incident.get("status") not in ("new", "acknowledged")
+                                or incident.get("detection_mode") != "real_model"):
+                            continue
+                        try:
+                            created = datetime.fromisoformat(
+                                str(incident["created_at"]).replace("Z", "+00:00")
+                            )
+                            if created >= cutoff:
+                                recent_active = True
+                                break
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                    if recent_active:
+                        continue
+                    background = BackgroundTasks()
+                    try:
+                        await analyze_camera_frame(cam["id"], background)
+                        await background()
+                    except HTTPException as exc:
+                        log.warning("Auto-scan camera %s skipped: %s", cam["id"], exc.detail)
+                    except Exception:
+                        log.exception("Auto-scan camera %s failed", cam["id"])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Camera auto-scan loop failed")
+            await asyncio.sleep(settings.camera_auto_scan_interval_sec)
+
+    @app.on_event("startup")
+    async def start_camera_auto_scan() -> None:
+        nonlocal scanner_task
+        if not settings.camera_auto_scan_enabled:
+            return
+        if detector.mode != "real_model":
+            log.error("Camera auto-scan disabled: a real YOLO model is required; current mode=%s",
+                      detector.mode)
+            return
+        if not capture.ffmpeg_available():
+            log.error("Camera auto-scan disabled: FFmpeg is not installed")
+            return
+        scanner_task = asyncio.create_task(camera_auto_scan_loop())
+        log.warning("Camera auto-scan enabled every %ss for configured cameras",
+                    settings.camera_auto_scan_interval_sec)
+
+    @app.on_event("shutdown")
+    async def stop_camera_auto_scan() -> None:
+        nonlocal scanner_task
+        if scanner_task is not None:
+            scanner_task.cancel()
+            try:
+                await scanner_task
+            except asyncio.CancelledError:
+                pass
+            scanner_task = None
 
     return app
 

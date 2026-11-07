@@ -5,6 +5,7 @@ struct IncidentDetailView: View {
     @ObservedObject var api: API
     let incident: Incident
     @State private var selectedStatus: String
+    @State private var savedStatus: String
     @State private var savingStatus = false
     @State private var showingDeleteConfirmation = false
     @State private var error: String?
@@ -14,6 +15,7 @@ struct IncidentDetailView: View {
         self.api = api
         self.incident = incident
         _selectedStatus = State(initialValue: incident.status)
+        _savedStatus = State(initialValue: incident.status)
     }
 
     private var mediaURL: URL? { api.absoluteURL(for: incident.media_url) }
@@ -27,7 +29,7 @@ struct IncidentDetailView: View {
                 LabeledContent("Классификация", value: incident.classification ?? "Не указана")
                 LabeledContent("Режим детектора", value: incident.detection_mode)
                 if let confidence = incident.confidence {
-                    LabeledContent("Уверенность", value: "\(Int(confidence * 100))%")
+                    LabeledContent("Уверенность модели", value: "\(Int(confidence * 100))%")
                 }
                 LabeledContent("Координаты", value: "\(incident.lat), \(incident.lon)")
                 if let location = incident.location_name {
@@ -49,7 +51,7 @@ struct IncidentDetailView: View {
                         if let player {
                             VideoPlayer(player: player).frame(height: 220)
                         } else {
-                            Text("Видео готовится к открытию")
+                            Text("Видео не удалось подготовить.")
                         }
                     } else {
                         AsyncImage(url: mediaURL) { phase in
@@ -79,8 +81,23 @@ struct IncidentDetailView: View {
                     Text("Решено").tag("resolved")
                     Text("Ложная тревога").tag("false_alarm")
                 }
-                .disabled(savingStatus)
-                if savingStatus { ProgressView("Сохраняем статус…") }
+                Button {
+                    savingStatus = true
+                    Task {
+                        do {
+                            try await api.updateIncident(incident, status: selectedStatus)
+                            savedStatus = selectedStatus
+                            error = nil
+                        } catch {
+                            self.error = error.localizedDescription
+                        }
+                        savingStatus = false
+                    }
+                } label: {
+                    if savingStatus { ProgressView("Сохраняем…") }
+                    else { Label("Сохранить статус", systemImage: "checkmark.circle") }
+                }
+                .disabled(savingStatus || selectedStatus == savedStatus)
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
             }
 
@@ -92,20 +109,6 @@ struct IncidentDetailView: View {
         }
         .navigationTitle("Детали события")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: selectedStatus) { oldValue, newValue in
-            guard oldValue != newValue else { return }
-            savingStatus = true
-            Task {
-                do {
-                    try await api.updateIncident(incident, status: newValue)
-                    error = nil
-                } catch {
-                    selectedStatus = oldValue
-                    self.error = error.localizedDescription
-                }
-                savingStatus = false
-            }
-        }
         .confirmationDialog("Удалить этот инцидент?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Удалить", role: .destructive) {
                 Task {

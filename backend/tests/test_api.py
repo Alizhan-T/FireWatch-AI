@@ -354,3 +354,24 @@ def test_optional_api_key_guard(tmp_path):
         assert secure_client.get("/stats").status_code == 401
         ok = secure_client.get("/stats", headers={"X-API-Key": "test-secret-token"})
         assert ok.status_code == 200
+
+
+def test_auto_scan_requires_real_detector(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings()
+    settings.database_path = tmp_path / "auto-scan.db"
+    settings.media_dir = tmp_path / "auto-scan-media"
+    settings.demo_assets_dir = tmp_path / "demo_assets"
+    settings.cameras_file = tmp_path / "auto-scan-cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.detector = "heuristic"
+    settings.firebase_credentials = ""
+    settings.camera_auto_scan_enabled = True
+
+    with TestClient(create_app(settings)) as scan_client:
+        health = scan_client.get("/health").json()
+        assert health["camera_auto_scan_enabled"] is True
+        assert health["camera_auto_scan_active"] is False

@@ -305,11 +305,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             created_at=r["created_at"],
         )
 
-    async def infer_and_store(img_path: Path, rel: str, det_id: str, *,
-                              source_video_id: str | None = None,
-                              frame_ts: float | None = None):
-        """Единый пайплайн: реальный инференс (переиспользует загруженную модель) в пуле потоков,
-        аннотирование, запись в SQLite. Ограничен семафором heavy_jobs."""
+    async def run_inference(img_path: Path, rel: str):
+        """Run the loaded detector without forcing every camera frame into persistent storage."""
         async with heavy_jobs:
             t0 = time.perf_counter()
             try:
@@ -318,17 +315,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.exception("Detection failed for %s", rel)
                 raise HTTPException(500, f"Ошибка AI-анализа ({type(e).__name__})")
             ms = int((time.perf_counter() - t0) * 1000)
-            boxes = [b.__dict__ for b in out.boxes]
-            ann_rel = None
-            if boxes:
-                ann_rel = f"uploads/{det_id}_annotated.jpg"
-                await run_in_threadpool(annotate, img_path, settings.media_dir / ann_rel, boxes)
+        return out, ms
+
+    async def persist_detection(img_path: Path, rel: str, det_id: str, out, ms: int, *,
+                                source_video_id: str | None = None,
+                                frame_ts: float | None = None):
+        boxes = [b.__dict__ for b in out.boxes]
+        ann_rel = None
+        if boxes:
+            ann_rel = f"uploads/{det_id}_annotated.jpg"
+            await run_in_threadpool(annotate, img_path, settings.media_dir / ann_rel, boxes)
         det = db.create_detection(
             id=det_id, status="completed", mode=detector.mode, provider=detector.provider,
             model_name=detector.model_name, classification=out.classification,
             confidence=out.confidence, boxes=boxes, processing_ms=ms,
             image_path=rel, annotated_path=ann_rel,
             source_video_id=source_video_id, frame_timestamp_sec=frame_ts,
+        )
+        return det, ann_rel
+
+    async def infer_and_store(img_path: Path, rel: str, det_id: str, *,
+                              source_video_id: str | None = None,
+                              frame_ts: float | None = None):
+        out, ms = await run_inference(img_path, rel)
+        det, ann_rel = await persist_detection(
+            img_path, rel, det_id, out, ms,
+            source_video_id=source_video_id, frame_ts=frame_ts,
         )
         return out, det, ann_rel
 

@@ -558,7 +558,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source="detection", detection_id=det["id"], detection_mode=det["mode"],
             classification=det["classification"], confidence=det["confidence"],
             media_type="image", media_path=det["annotated_path"] or det["image_path"],
-            media_note=note, is_demo=bool(vid),
+            media_note=note, is_demo=bool(vid) or det["mode"] != "real_model",
             camera_id=f"demo_video:{vid}" if vid else None,
         )
 
@@ -584,8 +584,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         row = db.create_incident(**fields)
         if body.detection_id:
             db.link_detection(body.detection_id, row["id"])
-        # Simulated incidents remain visible in-app but never trigger emergency push alerts.
         inc = to_incident(row)
+        if not inc["is_demo"]:
+            notify(inc, background)
         return inc
 
     @app.patch("/incidents/{incident_id}/status", tags=["incidents"], response_model=Incident)
@@ -847,8 +848,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             detection_mode="simulated", media_type=media_type, media_path=media_path,
             media_note=note, is_demo=True,
         )
+        # Simulated incidents are visible in-app but never trigger emergency push alerts.
         inc = to_incident(row)
-        notify(inc, background)
         return inc
 
     @app.get("/demo_samples/{kind}", tags=["demo"])

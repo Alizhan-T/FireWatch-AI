@@ -327,6 +327,12 @@ def test_camera_frame_analysis_creates_reviewable_incident(client, tmp_path, mon
     assert incident["is_demo"] is True
     assert incident["status"] == "new"
 
+    # Repeated detections from the same camera are linked to the existing active incident.
+    repeated = client.post(f"/cameras/{camera['id']}/analyze")
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["id"] != detection["id"]
+    assert repeated.json()["incident_id"] == detection["incident_id"]
+
 
 def test_optional_api_key_guard(tmp_path):
     from fastapi.testclient import TestClient

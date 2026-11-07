@@ -11,7 +11,6 @@ import random
 import shutil
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -63,30 +62,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     (settings.media_dir / "snapshots").mkdir(exist_ok=True)
 
     scanner_task: asyncio.Task | None = None
+    scanner_enabled = False
+    scanner_last_error: str | None = None
+    scanner_last_run_at: str | None = None
+    scanner_current_camera: str | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        nonlocal scanner_task
+        nonlocal scanner_last_error
         if settings.camera_auto_scan_enabled:
-            if detector.mode != "real_model":
-                log.error("Camera auto-scan disabled: a real YOLO model is required; current mode=%s",
-                          detector.mode)
-            elif not capture.ffmpeg_available():
-                log.error("Camera auto-scan disabled: FFmpeg is not installed")
-            else:
-                scanner_task = asyncio.create_task(camera_auto_scan_loop())
-                log.warning("Camera auto-scan enabled every %ss for configured cameras",
-                            settings.camera_auto_scan_interval_sec)
+            try:
+                start_camera_auto_scan(require_cameras=False)
+            except HTTPException as exc:
+                scanner_last_error = str(exc.detail)
+                log.error("Camera auto-scan was not started: %s", scanner_last_error)
         try:
             yield
         finally:
-            if scanner_task is not None:
-                scanner_task.cancel()
-                try:
-                    await scanner_task
-                except asyncio.CancelledError:
-                    pass
-                scanner_task = None
+            await stop_camera_auto_scan()
 
     app = FastAPI(
         title="FireWatch AI API",
@@ -360,9 +353,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "detector": detector_info(),
             "ffmpeg": capture.ffmpeg_available(),
             "firebase": push.status(),
-            "camera_auto_scan_enabled": settings.camera_auto_scan_enabled,
+            "camera_auto_scan_enabled": scanner_enabled,
             "camera_auto_scan_active": scanner_task is not None and not scanner_task.done(),
             "camera_auto_scan_interval_sec": settings.camera_auto_scan_interval_sec,
+            "camera_auto_scan_last_error": scanner_last_error,
+            "camera_auto_scan_last_run_at": scanner_last_run_at,
+            "camera_auto_scan_current_camera": scanner_current_camera,
             "cameras_configured": len(load_cameras()),
             "demo_videos_available": len(sync_demo_videos_dir()),
             "devices_registered": len(db.device_tokens()),
@@ -373,6 +369,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "localhost_url": f"http://127.0.0.1:{settings.port}",
             },
         }
+
+
+    @app.get("/monitoring/status", tags=["monitoring"])
+    def monitoring_status():
+        return camera_monitoring_status()
+
+    @app.post("/monitoring/start", tags=["monitoring"])
+    def start_monitoring():
+        start_camera_auto_scan(require_cameras=True)
+        return camera_monitoring_status()
+
+    @app.post("/monitoring/stop", tags=["monitoring"])
+    async def stop_monitoring():
+        await stop_camera_auto_scan()
+        return camera_monitoring_status()
 
     @app.get("/network_info", tags=["system"])
     def network_info():
@@ -461,24 +472,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         incident_id = None
         if out.classification != "none":
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-            existing = None
-            for candidate in db.list_incidents(limit=500):
-                if (candidate.get("camera_id") != camera_id
-                        or candidate.get("status") not in ("new", "acknowledged")
-                        or candidate.get("classification") != out.classification
-                        or candidate.get("detection_mode") != det["mode"]):
-                    continue
-                try:
-                    created = datetime.fromisoformat(
-                        str(candidate["created_at"]).replace("Z", "+00:00")
-                    )
-                    if created >= cutoff:
-                        existing = candidate
-                        break
-                except (KeyError, TypeError, ValueError):
-                    continue
-
+            existing = db.find_active_camera_incident(
+                camera_id, out.classification, det["mode"]
+            )
             if existing:
                 # Сохраняем новую детекцию, но не плодим одинаковые активные тревоги.
                 db.link_detection(det_id, existing["id"])
@@ -912,43 +908,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                           for c in load_cameras().values())
         return _PANEL_HTML.replace("{{OPTIONS}}", options)
 
-    async def camera_auto_scan_loop() -> None:
-        """Опциональный цикл: анализирует подключённые камеры только реальной YOLO-моделью."""
-        while True:
+    def camera_monitoring_status() -> dict:
+        return {
+            "enabled": scanner_enabled,
+            "active": scanner_task is not None and not scanner_task.done(),
+            "interval_sec": settings.camera_auto_scan_interval_sec,
+            "last_error": scanner_last_error,
+            "last_run_at": scanner_last_run_at,
+            "current_camera": scanner_current_camera,
+            "detector_mode": detector.mode,
+            "ffmpeg_available": capture.ffmpeg_available(),
+            "cameras_configured": len(load_cameras()),
+        }
+
+    def start_camera_auto_scan(*, require_cameras: bool) -> None:
+        nonlocal scanner_task, scanner_enabled, scanner_last_error
+        if detector.mode != "real_model":
+            raise HTTPException(409, "Автомониторинг доступен только при загруженной реальной YOLO-модели. Сейчас активен DEMO-режим.")
+        if not capture.ffmpeg_available():
+            raise HTTPException(503, "Для мониторинга камер установите FFmpeg на сервер.")
+        if require_cameras and not load_cameras():
+            raise HTTPException(409, "Сначала добавьте хотя бы одну камеру и проверьте её подключение.")
+        if scanner_task is not None and not scanner_task.done():
+            scanner_enabled = True
+            scanner_last_error = None
+            return
+        scanner_enabled = True
+        scanner_last_error = None
+        scanner_task = asyncio.create_task(camera_auto_scan_loop())
+        log.warning("Camera auto-scan started: interval=%ss cameras=%s",
+                    settings.camera_auto_scan_interval_sec, len(load_cameras()))
+
+    async def stop_camera_auto_scan() -> None:
+        nonlocal scanner_task, scanner_enabled, scanner_current_camera
+        scanner_enabled = False
+        task = scanner_task
+        if task is not None:
+            task.cancel()
             try:
-                for cam in load_cameras().values():
-                    # Не создаём повторные активные тревоги по той же камере чаще одного раза в 10 минут.
-                    recent_active = False
-                    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-                    for incident in db.list_incidents(limit=500):
-                        if (incident.get("camera_id") != cam["id"]
-                                or incident.get("status") not in ("new", "acknowledged")
-                                or incident.get("detection_mode") != "real_model"):
-                            continue
-                        try:
-                            created = datetime.fromisoformat(
-                                str(incident["created_at"]).replace("Z", "+00:00")
-                            )
-                            if created >= cutoff:
-                                recent_active = True
-                                break
-                        except (KeyError, TypeError, ValueError):
-                            continue
-                    if recent_active:
-                        continue
-                    background = BackgroundTasks()
-                    try:
-                        await analyze_camera_frame(cam["id"], background)
-                        await background()
-                    except HTTPException as exc:
-                        log.warning("Auto-scan camera %s skipped: %s", cam["id"], exc.detail)
-                    except Exception:
-                        log.exception("Auto-scan camera %s failed", cam["id"])
+                await task
             except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("Camera auto-scan loop failed")
-            await asyncio.sleep(settings.camera_auto_scan_interval_sec)
+                pass
+            scanner_task = None
+        scanner_current_camera = None
+        log.info("Camera auto-scan stopped")
+
+    async def camera_auto_scan_loop() -> None:
+        """Периодически проверяет все разрешённые камеры реальной YOLO-моделью."""
+        nonlocal scanner_last_error, scanner_last_run_at, scanner_current_camera
+        while scanner_enabled:
+            cameras_snapshot = list(load_cameras().values())
+            for cam in cameras_snapshot:
+                if not scanner_enabled:
+                    return
+                scanner_current_camera = cam["name"]
+                background = BackgroundTasks()
+                try:
+                    # Дедупликация выполняется при создании инцидента, поэтому сканируем
+                    # камеру и после тревоги: это позволяет заметить изменение smoke -> fire.
+                    await analyze_camera_frame(cam["id"], background)
+                    await background()
+                    scanner_last_error = None
+                    scanner_last_run_at = now_iso()
+                except HTTPException as exc:
+                    scanner_last_error = f"{cam['name']}: {exc.detail}"[:500]
+                    scanner_last_run_at = now_iso()
+                    log.warning("Auto-scan camera %s skipped: %s", cam["id"], exc.detail)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    scanner_last_error = f"{cam['name']}: {type(exc).__name__}"[:500]
+                    scanner_last_run_at = now_iso()
+                    log.exception("Auto-scan camera %s failed", cam["id"])
+                finally:
+                    scanner_current_camera = None
+            if scanner_enabled:
+                await asyncio.sleep(settings.camera_auto_scan_interval_sec)
 
     return app
 

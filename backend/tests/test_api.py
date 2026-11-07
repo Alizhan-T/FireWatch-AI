@@ -354,9 +354,11 @@ def test_optional_api_key_guard(tmp_path):
     settings.api_access_token = "test-secret-token"
 
     with TestClient(create_app(settings)) as secure_client:
-        assert secure_client.get("/health").status_code == 200
+        assert secure_client.get("/health").status_code == 401
         assert secure_client.get("/stats").status_code == 401
-        ok = secure_client.get("/stats", headers={"X-API-Key": "test-secret-token"})
+        headers = {"X-API-Key": "test-secret-token"}
+        assert secure_client.get("/health", headers=headers).status_code == 200
+        ok = secure_client.get("/stats", headers=headers)
         assert ok.status_code == 200
 
 

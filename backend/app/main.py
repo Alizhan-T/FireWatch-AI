@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import io
 import json
 import hmac
@@ -60,11 +61,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     media_demo_videos_dir.mkdir(exist_ok=True)
     (settings.media_dir / "snapshots").mkdir(exist_ok=True)
 
+    scanner_task: asyncio.Task | None = None
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        nonlocal scanner_task
+        if settings.camera_auto_scan_enabled:
+            if detector.mode != "real_model":
+                log.error("Camera auto-scan disabled: a real YOLO model is required; current mode=%s",
+                          detector.mode)
+            elif not capture.ffmpeg_available():
+                log.error("Camera auto-scan disabled: FFmpeg is not installed")
+            else:
+                scanner_task = asyncio.create_task(camera_auto_scan_loop())
+                log.warning("Camera auto-scan enabled every %ss for configured cameras",
+                            settings.camera_auto_scan_interval_sec)
+        try:
+            yield
+        finally:
+            if scanner_task is not None:
+                scanner_task.cancel()
+                try:
+                    await scanner_task
+                except asyncio.CancelledError:
+                    pass
+                scanner_task = None
+
     app = FastAPI(
         title="FireWatch AI API",
         version="1.0.0",
         description="Мониторинг лесных пожаров: инциденты, AI-детекция огня/дыма, "
                     "демо-симуляция, push-уведомления.",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -96,7 +124,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Ограничение одновременных тяжёлых задач (YOLO-инференс / FFmpeg), чтобы не исчерпать RAM.
     heavy_jobs = asyncio.Semaphore(max(1, settings.max_concurrent_jobs))
-    scanner_task: asyncio.Task | None = None
     duration_cache: dict[tuple[str, float, int], float] = {}
 
     # ---------------- helpers ----------------
@@ -908,33 +935,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 log.exception("Camera auto-scan loop failed")
             await asyncio.sleep(settings.camera_auto_scan_interval_sec)
-
-    @app.on_event("startup")
-    async def start_camera_auto_scan() -> None:
-        nonlocal scanner_task
-        if not settings.camera_auto_scan_enabled:
-            return
-        if detector.mode != "real_model":
-            log.error("Camera auto-scan disabled: a real YOLO model is required; current mode=%s",
-                      detector.mode)
-            return
-        if not capture.ffmpeg_available():
-            log.error("Camera auto-scan disabled: FFmpeg is not installed")
-            return
-        scanner_task = asyncio.create_task(camera_auto_scan_loop())
-        log.warning("Camera auto-scan enabled every %ss for configured cameras",
-                    settings.camera_auto_scan_interval_sec)
-
-    @app.on_event("shutdown")
-    async def stop_camera_auto_scan() -> None:
-        nonlocal scanner_task
-        if scanner_task is not None:
-            scanner_task.cancel()
-            try:
-                await scanner_task
-            except asyncio.CancelledError:
-                pass
-            scanner_task = None
 
     return app
 

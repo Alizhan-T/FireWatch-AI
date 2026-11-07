@@ -9,6 +9,9 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-tests.yml'
+concurrency:
+  group: firewatch-backend-tests-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   pytest:
     runs-on: ubuntu-latest

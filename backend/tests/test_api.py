@@ -388,8 +388,10 @@ def test_auto_scan_requires_real_detector(tmp_path):
 
     with TestClient(create_app(settings)) as scan_client:
         health = scan_client.get("/health").json()
-        assert health["camera_auto_scan_enabled"] is True
+        assert health["camera_auto_scan_enabled"] is False
         assert health["camera_auto_scan_active"] is False
+        assert "YOLO-модели" in health["camera_auto_scan_last_error"]
+        assert scan_client.post("/monitoring/start").status_code == 409
 
 
 def test_monitoring_is_blocked_without_real_model(client):

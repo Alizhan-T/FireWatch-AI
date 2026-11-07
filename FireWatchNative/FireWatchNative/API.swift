@@ -80,6 +80,39 @@ final class API: ObservableObject {
         return url
     }
 
+    private func mediaRequest(_ path: String) throws -> URLRequest {
+        var request = URLRequest(url: try endpoint(path))
+        request.timeoutInterval = 60
+        request.setValue("true", forHTTPHeaderField: "ngrok-skip-browser-warning")
+        if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
+        return request
+    }
+
+    func mediaData(for path: String) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(for: mediaRequest(path))
+        guard let http = response as? HTTPURLResponse else { throw FireWatchAPIError.invalidResponse }
+        guard (200...299).contains(http.statusCode) else {
+            throw FireWatchAPIError.http(http.statusCode, "Не удалось загрузить файл доказательства.")
+        }
+        return data
+    }
+
+    func downloadMedia(for path: String) async throws -> URL {
+        let request = try mediaRequest(path)
+        let (temporaryURL, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FireWatchAPIError.invalidResponse }
+        guard (200...299).contains(http.statusCode) else {
+            throw FireWatchAPIError.http(http.statusCode, "Не удалось загрузить видео.")
+        }
+        let ext = URL(string: path, relativeTo: try serverBaseURL())?.pathExtension
+        let fileExtension = (ext?.isEmpty == false) ? ext! : "mp4"
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("firewatch-\(UUID().uuidString)")
+            .appendingPathExtension(fileExtension)
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        return destination
+    }
+
     private func request<T: Decodable>(
         _ path: String,
         method: String = "GET",

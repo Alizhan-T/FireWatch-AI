@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_incidents_created ON incidents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_incidents_camera_active
+    ON incidents(camera_id, status, classification, detection_mode, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS detections (
     id              TEXT PRIMARY KEY,
@@ -158,6 +160,19 @@ class Database:
         args.append(limit)
         with self.conn() as c:
             return [dict(r) for r in c.execute(q, args).fetchall()]
+
+    def find_active_camera_incident(
+        self, camera_id: str, classification: str, detection_mode: str
+    ) -> dict | None:
+        """Find the latest unresolved alert for this exact camera/class/model."""
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT * FROM incidents WHERE camera_id=? "
+                "AND status IN ('new','acknowledged') AND classification=? "
+                "AND detection_mode=? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (camera_id, classification, detection_mode),
+            ).fetchone()
+        return dict(row) if row else None
 
     def update_incident_status(self, incident_id: str, status: str) -> dict | None:
         with self.conn() as c:

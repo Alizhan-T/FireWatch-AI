@@ -60,6 +60,13 @@ class Settings:
     )
     host: str = field(default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip())
     api_access_token: str = field(default_factory=lambda: os.getenv("API_ACCESS_TOKEN", "").strip())
+    camera_auto_scan_enabled: bool = field(
+        default_factory=lambda: os.getenv("CAMERA_AUTO_SCAN_ENABLED", "false").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+    camera_auto_scan_interval_sec: int = field(
+        default_factory=lambda: max(30, int(os.getenv("CAMERA_AUTO_SCAN_INTERVAL_SEC", "120")))
+    )
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
 
     database_path: Path = field(

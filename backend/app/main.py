@@ -967,6 +967,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         scanner_current_camera = None
         log.info("Camera auto-scan stopped")
 
+    async def scan_camera_once(camera_id: str, background: BackgroundTasks) -> None:
+        """Analyze one live frame; persist only new alerts or stronger evidence."""
+        cam = load_cameras().get(camera_id)
+        if not cam:
+            return
+        det_id = new_id("det")
+        rel = f"uploads/{det_id}_camera.jpg"
+        img_path = settings.media_dir / rel
+        try:
+            async with heavy_jobs:
+                await capture.grab_stream_frame(cam["url"], img_path, timeout=20)
+            db.upsert_camera_status(camera_id, status="online", last_error=None,
+                                    snapshot_path=None)
+            out, processing_ms = await run_inference(img_path, rel)
+        except capture.CaptureError as exc:
+            img_path.unlink(missing_ok=True)
+            db.upsert_camera_status(camera_id, status="offline", last_error=str(exc)[:300],
+                                    snapshot_path=None)
+            raise HTTPException(502, f"Не удалось получить кадр камеры: {exc}")
+        except Exception:
+            img_path.unlink(missing_ok=True)
+            raise
+
+        if out.classification == "none":
+            img_path.unlink(missing_ok=True)
+            return
+
+        severity = severity_for(out.classification, out.confidence)
+        existing = db.find_active_camera_incident(camera_id, out.classification, detector.mode)
+        if existing:
+            old_confidence = float(existing.get("confidence") or 0.0)
+            order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+            old_severity = existing["severity"]
+            if out.confidence <= old_confidence and order[severity] <= order[old_severity]:
+                img_path.unlink(missing_ok=True)
+                return
+
+            det, ann_rel = await persist_detection(img_path, rel, det_id, out, processing_ms)
+            db.link_detection(det_id, existing["id"])
+            stronger_severity = severity if order[severity] > order[old_severity] else old_severity
+            updated = db.update_camera_incident_evidence(
+                existing["id"],
+                severity=stronger_severity,
+                confidence=max(old_confidence, out.confidence),
+                media_path=ann_rel or rel,
+                media_note="Обновлено по более уверенному кадру автоматического мониторинга. Требуется подтверждение оператором.",
+                detection_id=det_id,
+            )
+            if updated and order[stronger_severity] > order[old_severity]:
+                notify(to_incident(updated), background)
+            return
+
+        det, ann_rel = await persist_detection(img_path, rel, det_id, out, processing_ms)
+        cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
+        row = db.create_incident(
+            title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
+            description="Автоматический анализ видеопотока обнаружил признаки огня или дыма. Требуется обязательная проверка оператором.",
+            source="camera", camera_id=camera_id,
+            location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
+            severity=severity, classification=out.classification,
+            confidence=out.confidence, detection_mode=det["mode"],
+            media_type="image", media_path=ann_rel or rel,
+            media_note="Кадр из видеопотока, проанализированный реальной YOLO-моделью. Результат требует проверки человеком.",
+            is_demo=False, detection_id=det_id,
+        )
+        db.link_detection(det_id, row["id"])
+        notify(to_incident(row), background)
+
     async def camera_auto_scan_loop() -> None:
         """Периодически проверяет все разрешённые камеры реальной YOLO-моделью."""
         nonlocal scanner_last_error, scanner_last_run_at, scanner_current_camera
@@ -980,7 +1048,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 try:
                     # Дедупликация выполняется при создании инцидента, поэтому сканируем
                     # камеру и после тревоги: это позволяет заметить изменение smoke -> fire.
-                    await analyze_camera_frame(cam["id"], background)
+                    await scan_camera_once(cam["id"], background)
                     await background()
                     scanner_last_error = None
                     scanner_last_run_at = now_iso()

@@ -448,8 +448,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/cameras", tags=["cameras"], response_model=CameraWithStatus, status_code=201)
     def add_camera(body: CameraCreate):
         url = body.url.strip()
-        if not url.lower().startswith(("rtsp://", "rtsps://", "http://", "https://")):
-            raise HTTPException(422, "URL камеры должен начинаться с rtsp://, rtsps://, http:// или https://")
+        try:
+            parsed = urlsplit(url)
+            port = parsed.port  # Accessing .port validates malformed and out-of-range ports.
+        except ValueError:
+            raise HTTPException(422, "Некорректный URL камеры или номер порта")
+        if parsed.scheme.lower() not in ("rtsp", "rtsps", "http", "https") or not parsed.hostname:
+            raise HTTPException(422, "Укажите полный URL камеры с поддерживаемой схемой и именем хоста")
+        if port is not None and not 1 <= port <= 65535:
+            raise HTTPException(422, "Номер порта должен быть от 1 до 65535")
         cams = load_cameras()
         cam_id = (body.id or new_id("cam")).strip()
         if cam_id in cams:

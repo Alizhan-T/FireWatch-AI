@@ -2,6 +2,7 @@ import SwiftUI
 import AVKit
 
 struct IncidentDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var api: API
     let incident: Incident
     @State private var selectedStatus: String
@@ -99,8 +100,12 @@ struct IncidentDetailView: View {
         .confirmationDialog("Удалить этот инцидент?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Удалить", role: .destructive) {
                 Task {
-                    do { try await api.deleteIncident(incident) }
-                    catch { self.error = error.localizedDescription }
+                    do {
+                        try await api.deleteIncident(incident)
+                        dismiss()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
                 }
             }
             Button("Отмена", role: .cancel) {}

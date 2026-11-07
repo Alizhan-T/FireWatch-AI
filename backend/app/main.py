@@ -105,7 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def api_key_guard(request: Request, call_next):
         expected = settings.api_access_token
-        if expected and request.method != "OPTIONS" and request.url.path != "/health":
+        if expected and request.method != "OPTIONS":
             supplied = request.headers.get("x-api-key", "")
             if not hmac.compare_digest(supplied, expected):
                 return JSONResponse(status_code=401, content={"detail": "API key required or invalid"})

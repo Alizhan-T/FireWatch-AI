@@ -120,6 +120,7 @@ def test_detect_and_save_incident(client, fire_jpg):
     assert inc.status_code == 201
     j = inc.json()
     assert j["source"] == "detection" and j["detection_mode"] == "demo_heuristic"
+    assert j["is_demo"] is True
     assert j["detection_id"] == det["id"] and j["media_type"] == "image"
 
 
@@ -131,6 +132,7 @@ def test_detect_save_incident_flag(client, fire_jpg):
     assert j["incident_id"]
     inc = client.get(f"/incidents/{j['incident_id']}").json()
     assert inc["lat"] == 51.0 and inc["source"] == "detection"
+    assert inc["is_demo"] is True
 
 
 def test_network_info_and_cameras_crud(client, tmp_path, monkeypatch):

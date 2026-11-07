@@ -74,9 +74,24 @@ struct ServerHealth: Decodable {
     let camera_auto_scan_enabled: Bool?
     let camera_auto_scan_active: Bool?
     let camera_auto_scan_interval_sec: Int?
+    let camera_auto_scan_last_error: String?
+    let camera_auto_scan_last_run_at: String?
+    let camera_auto_scan_current_camera: String?
     let cameras_configured: Int?
     let demo_videos_available: Int?
     let server_time: String?
+}
+
+struct MonitoringStatus: Decodable {
+    let enabled: Bool?
+    let active: Bool?
+    let interval_sec: Int?
+    let last_error: String?
+    let last_run_at: String?
+    let current_camera: String?
+    let detector_mode: String?
+    let ffmpeg_available: Bool?
+    let cameras_configured: Int?
 }
 
 struct DetectionSummary: Decodable {

@@ -21,6 +21,39 @@ final class API: ObservableObject {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+
+    private func send<T: Decodable>(_ path: String, method: String, body: Data? = nil) async throws -> T {
+        guard let base = URL(string: baseURL), let url = URL(string: path, relativeTo: base) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 25
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    func addCamera(name: String, streamURL: String, lat: Double, lon: Double) async throws {
+        struct Payload: Encodable { let name: String; let url: String; let lat: Double; let lon: Double }
+        let payload = Payload(name: name, url: streamURL, lat: lat, lon: lon)
+        let _: Camera = try await send("/cameras", method: "POST", body: JSONEncoder().encode(payload))
+        await refresh()
+    }
+
+    func checkCamera(_ camera: Camera) async throws {
+        let _: Camera = try await send("/cameras/\\(camera.id)/check", method: "POST")
+        await refresh()
+    }
+
+    func deleteCamera(_ camera: Camera) async throws {
+        struct Result: Decodable { let ok: Bool }
+        let _: Result = try await send("/cameras/\\(camera.id)", method: "DELETE")
+        await refresh()
+    }
+
     func refresh() async {
         loading = true
         defer { loading = false }

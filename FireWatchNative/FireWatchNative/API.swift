@@ -105,7 +105,7 @@ final class API: ObservableObject {
             throw FireWatchAPIError.http(http.statusCode, "Не удалось загрузить видео.")
         }
         let ext = URL(string: path, relativeTo: try serverBaseURL())?.pathExtension
-        let fileExtension = (ext?.isEmpty == false) ? ext! : "mp4"
+        let fileExtension = ext.flatMap { $0.isEmpty ? nil : $0 } ?? "mp4"
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("firewatch-\(UUID().uuidString)")
             .appendingPathExtension(fileExtension)

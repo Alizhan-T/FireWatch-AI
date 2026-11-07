@@ -72,7 +72,7 @@ The app links to [PocketWorld's Kazakhstan webcam directory](https://pocketworld
 - **Map:** shows incident and configured-camera coordinates.
 - Demo, simulated and heuristic results are labelled; every suspected fire still requires human verification.
 
-Continuous camera scanning is opt-in and disabled by default. To enable it, set `CAMERA_AUTO_SCAN_ENABLED=true` and `CAMERA_AUTO_SCAN_INTERVAL_SEC=120` in `backend/.env`, then restart the backend. The worker starts only if the real YOLO model loaded and FFmpeg is available; it does not run with the demo heuristic. It scans configured cameras sequentially and suppresses repeat active alerts from the same camera for 10 minutes. Start with a small number of permitted feeds and monitor CPU/network use. Manual one-frame analysis remains available from the camera detail screen.
+Continuous camera scanning is opt-in and disabled by default. To enable it, set `CAMERA_AUTO_SCAN_ENABLED=true` and `CAMERA_AUTO_SCAN_INTERVAL_SEC=30` in `backend/.env`, then restart the backend. You can also start and stop monitoring from the iOS app Settings screen. The worker starts only if the real YOLO model loaded and FFmpeg is available; it does not run with the demo heuristic. It scans configured cameras sequentially, repeats each round after the configured interval, and reuses an unresolved incident for the same camera, classification and model. A different classification, such as smoke followed by fire, can create a separate higher-priority incident. Start with a small number of permitted feeds and monitor CPU/network use. Manual one-frame analysis remains available from the camera detail screen.
 
 ## 6. Push notifications (optional setup)
 

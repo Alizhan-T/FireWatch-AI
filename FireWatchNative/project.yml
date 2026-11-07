@@ -7,9 +7,7 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1"
-    GENERATE_INFOPLIST_FILE: YES
-    INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Подключение к серверу FireWatch AI в локальной сети"
-    INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+    GENERATE_INFOPLIST_FILE: NO
     SUPPORTS_MACCATALYST: NO
 targets:
   FireWatchNative:
@@ -17,6 +15,8 @@ targets:
     platform: iOS
     sources:
       - path: FireWatchNative
+    info:
+      path: Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kz.firewatch.native

@@ -157,7 +157,7 @@ final class API: ObservableObject {
         await refresh()
     }
 
-    func updateIncident(_ incident: Incident, status: String) async throws {
+    func analyzeCamera(_ camera: Camera) async throws -> DetectionSummary {\n        let result: DetectionSummary = try await request("/cameras/\\(camera.id)/analyze", method: "POST", timeout: 150)\n        await refresh()\n        return result\n    }\n\n    func updateIncident(_ incident: Incident, status: String) async throws {
         struct Payload: Encodable { let status: String }
         let _: Incident = try await request("/incidents/\(incident.id)/status", method: "PATCH",
             body: JSONEncoder().encode(Payload(status: status)), contentType: "application/json")

@@ -277,7 +277,7 @@ class Database:
         ts = now_iso()
         prev = self.get_camera_status(camera_id) or {}
         last_frame = ts if status == "online" else prev.get("last_frame_at")
-        snap = snapshot_path if status == "online" else prev.get("snapshot_path")
+        snap = snapshot_path if snapshot_path is not None else prev.get("snapshot_path")
         with self.conn() as c:
             c.execute(
                 "INSERT INTO camera_status(camera_id,status,last_checked_at,last_frame_at,"

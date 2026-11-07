@@ -394,9 +394,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             async with heavy_jobs:
                 await capture.grab_stream_frame(cam["url"], img_path, timeout=20)
-                db.upsert_camera_status(camera_id, status="online", last_error=None,
-                                        snapshot_path=None)
-                out, det, ann_rel = await infer_and_store(img_path, rel, det_id)
+            db.upsert_camera_status(camera_id, status="online", last_error=None,
+                                    snapshot_path=None)
+            out, det, ann_rel = await infer_and_store(img_path, rel, det_id)
         except capture.CaptureError as e:
             img_path.unlink(missing_ok=True)
             db.upsert_camera_status(camera_id, status="offline", last_error=str(e)[:300],

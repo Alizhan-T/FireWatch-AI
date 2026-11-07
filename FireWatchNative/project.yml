@@ -9,10 +9,17 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"
     GENERATE_INFOPLIST_FILE: NO
     SUPPORTS_MACCATALYST: NO
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.0.0
 targets:
   FireWatchNative:
     type: application
     platform: iOS
+    dependencies:
+      - package: Firebase
+        product: FirebaseMessaging
     sources:
       - path: FireWatchNative
     info:

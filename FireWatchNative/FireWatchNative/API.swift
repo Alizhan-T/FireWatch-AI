@@ -151,6 +151,22 @@ final class API: ObservableObject {
         }
     }
 
+    private func upsertCamera(_ camera: Camera) {
+        if let index = cameras.firstIndex(where: { $0.id == camera.id }) {
+            cameras[index] = camera
+        } else {
+            cameras.insert(camera, at: 0)
+        }
+    }
+
+    private func upsertIncident(_ incident: Incident) {
+        if let index = incidents.firstIndex(where: { $0.id == incident.id }) {
+            incidents[index] = incident
+        } else {
+            incidents.insert(incident, at: 0)
+        }
+    }
+
     func refresh() async {
         guard !loading else { return }
         loading = true
@@ -186,12 +202,14 @@ final class API: ObservableObject {
         let payload = Payload(name: name, url: streamURL, lat: lat, lon: lon)
         let created: Camera = try await request("/cameras", method: "POST",
             body: JSONEncoder().encode(payload), contentType: "application/json")
+        upsertCamera(created)
         await refresh()
         return cameras.first(where: { $0.id == created.id }) ?? created
     }
 
     func checkCamera(_ camera: Camera) async throws -> Camera {
         let checked: Camera = try await request("/cameras/\(camera.id)/check", method: "POST")
+        upsertCamera(checked)
         await refresh()
         return cameras.first(where: { $0.id == camera.id }) ?? checked
     }
@@ -203,11 +221,15 @@ final class API: ObservableObject {
     func deleteCamera(_ camera: Camera) async throws {
         struct Result: Decodable { let ok: Bool }
         let _: Result = try await request("/cameras/\(camera.id)", method: "DELETE")
+        cameras.removeAll { $0.id == camera.id }
         await refresh()
     }
 
     func analyzeCamera(_ camera: Camera) async throws -> DetectionSummary {
         let result: DetectionSummary = try await request("/cameras/\(camera.id)/analyze", method: "POST", timeout: 150)
+        if let incidentID = result.incident_id, let incident = try? await fetchIncident(id: incidentID) {
+            upsertIncident(incident)
+        }
         await refresh()
         return result
     }
@@ -218,14 +240,16 @@ final class API: ObservableObject {
 
     func updateIncident(_ incident: Incident, status: String) async throws {
         struct Payload: Encodable { let status: String }
-        let _: Incident = try await request("/incidents/\(incident.id)/status", method: "PATCH",
+        let updated: Incident = try await request("/incidents/\(incident.id)/status", method: "PATCH",
             body: JSONEncoder().encode(Payload(status: status)), contentType: "application/json")
+        upsertIncident(updated)
         await refresh()
     }
 
     func deleteIncident(_ incident: Incident) async throws {
         struct Result: Decodable { let ok: Bool }
         let _: Result = try await request("/incidents/\(incident.id)", method: "DELETE")
+        incidents.removeAll { $0.id == incident.id }
         await refresh()
     }
 
@@ -267,7 +291,10 @@ final class API: ObservableObject {
             "/detect", method: "POST", body: body,
             contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120
         )
-        if result.incident_id != nil { await refresh() }
+        if let incidentID = result.incident_id, let incident = try? await fetchIncident(id: incidentID) {
+            upsertIncident(incident)
+            await refresh()
+        }
         return result
     }
 }

@@ -376,7 +376,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return camera_monitoring_status()
 
     @app.post("/monitoring/start", tags=["monitoring"])
-    def start_monitoring():
+    async def start_monitoring():
         start_camera_auto_scan(require_cameras=True)
         return camera_monitoring_status()
 

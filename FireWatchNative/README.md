@@ -82,7 +82,7 @@ Push is disabled until you configure your own Firebase project:
 1. Create an iOS app in Firebase with bundle ID `kz.firewatch.native`.
 2. Download `GoogleService-Info.plist` and place it at `FireWatchNative/FireWatchNative/GoogleService-Info.plist` (inside the Swift source folder, next to `FireWatchApp.swift`) so XcodeGen includes it in the app bundle. The file is ignored by Git and must not be committed.
 3. In Apple Developer, configure an APNs authentication key and upload it to Firebase Cloud Messaging.
-4. In Xcode, enable **Push Notifications** capability for the app's App ID and provisioning profile.
+4. XcodeGen now declares the **Push Notifications** capability and development APNs entitlement. In Xcode select your Apple Developer team and confirm the App ID/provisioning profile has Push Notifications enabled.
 5. In `backend/.env`, set `FIREBASE_CREDENTIALS` to the path of a Firebase Admin service-account JSON file. Never commit that file.
 6. Re-run `xcodegen generate`, build and run. In app Settings, request notification permission.
 

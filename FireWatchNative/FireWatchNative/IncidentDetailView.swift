@@ -18,8 +18,6 @@ struct IncidentDetailView: View {
         _savedStatus = State(initialValue: incident.status)
     }
 
-    private var mediaURL: URL? { api.absoluteURL(for: incident.media_url) }
-
     var body: some View {
         Form {
             Section("Инцидент") {
@@ -45,28 +43,17 @@ struct IncidentDetailView: View {
                 }
             }
 
-            if let mediaURL {
+            if let mediaPath = incident.media_url {
                 Section("Материал") {
                     if incident.media_type == "video" {
                         if let player {
                             VideoPlayer(player: player).frame(height: 220)
                         } else {
-                            Text("Видео не удалось подготовить.")
+                            ProgressView("Загружаем видео…")
                         }
                     } else {
-                        AsyncImage(url: mediaURL) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFit()
-                            case .failure:
-                                ContentUnavailableView("Изображение недоступно", systemImage: "photo")
-                            case .empty:
-                                ProgressView()
-                            @unknown default:
-                                ProgressView()
-                            }
-                        }
-                        .frame(maxHeight: 300)
+                        ProtectedMediaImage(api: api, path: mediaPath)
+                            .frame(maxHeight: 300)
                     }
                     if let note = incident.media_note {
                         Text(note).font(.caption).foregroundStyle(.secondary)
@@ -119,8 +106,15 @@ struct IncidentDetailView: View {
             Button("Отмена", role: .cancel) {}
         }
         .onAppear {
-            if incident.media_type == "video", let mediaURL {
-                player = AVPlayer(url: mediaURL)
+            if incident.media_type == "video", let mediaPath = incident.media_url {
+                Task {
+                    do {
+                        let localURL = try await api.downloadMedia(for: mediaPath)
+                        player = AVPlayer(url: localURL)
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
+                }
             }
         }
         .onDisappear {

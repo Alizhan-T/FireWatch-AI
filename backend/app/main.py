@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import hmac
 import logging
 import random
 import shutil
@@ -71,6 +72,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    @app.middleware("http")
+    async def api_key_guard(request: Request, call_next):
+        expected = settings.api_access_token
+        if expected and request.method != "OPTIONS" and request.url.path != "/health":
+            supplied = request.headers.get("x-api-key", "")
+            if not hmac.compare_digest(supplied, expected):
+                return JSONResponse(status_code=401, content={"detail": "API key required or invalid"})
+        return await call_next(request)
+
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
     db = Database(settings.database_path)

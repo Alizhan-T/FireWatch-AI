@@ -561,8 +561,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         row = db.create_incident(**fields)
         if body.detection_id:
             db.link_detection(body.detection_id, row["id"])
+        # Simulated incidents remain visible in-app but never trigger emergency push alerts.
         inc = to_incident(row)
-        notify(inc, background)
         return inc
 
     @app.patch("/incidents/{incident_id}/status", tags=["incidents"], response_model=Incident)
@@ -761,7 +761,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 **incident_fields_from_detection(det),
             )
             db.link_detection(det_id, row["id"])
-            notify(to_incident(row), background)
+            # DEMO VIDEO events are intentionally not sent as fire push alerts.
             det = db.get_detection(det_id) or det
 
         return to_detection_result(det)

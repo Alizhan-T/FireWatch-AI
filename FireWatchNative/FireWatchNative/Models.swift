@@ -91,6 +91,7 @@ struct CameraCandidate: Decodable, Identifiable {
     let source_name: String
     let source_url: String
     let catalog_url: String
+    let stream_list_url: String
     let verification_note: String
     let verified: Bool
 }

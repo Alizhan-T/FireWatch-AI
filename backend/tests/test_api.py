@@ -8,6 +8,8 @@ def test_health(client):
     assert j["status"] == "ok" and j["database"] is True
     assert j["detector"]["mode"] == "demo_heuristic"
     assert j["firebase"] == "not_configured"
+    assert j["camera_auto_scan_enabled"] is False
+    assert j["camera_auto_scan_active"] is False
 
 
 def test_docs_available(client):
@@ -15,7 +17,7 @@ def test_docs_available(client):
     spec = client.get("/openapi.json").json()
     for path in ["/health", "/cameras", "/incidents", "/incidents/{incident_id}",
                  "/detect", "/register_device", "/simulate_fire",
-                 "/incidents/{incident_id}/status"]:
+                 "/cameras/{camera_id}/analyze", "/incidents/{incident_id}/status"]:
         assert path in spec["paths"], path
 
 

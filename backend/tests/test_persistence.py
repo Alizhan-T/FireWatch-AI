@@ -39,3 +39,18 @@ def test_severity_check_constraint(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         db.create_incident(title="a", source="manual", lat=0, lon=0, severity="extreme",
                            detection_mode="manual")
+
+
+def test_camera_status_keeps_last_good_snapshot_when_scan_does_not_replace_it(tmp_path):
+    from app.db import Database
+
+    db = Database(tmp_path / "camera-status.db")
+    db.upsert_camera_status(
+        "cam-1", status="online", last_error=None,
+        snapshot_path="snapshots/cam-1.jpg",
+    )
+    updated = db.upsert_camera_status(
+        "cam-1", status="online", last_error=None,
+        snapshot_path=None,
+    )
+    assert updated["snapshot_path"] == "snapshots/cam-1.jpg"

@@ -222,10 +222,20 @@ final class API: ObservableObject {
     func detect(jpeg: Data, saveIncident: Bool = false) async throws -> DetectionSummary {
         let boundary = "FireWatch-\(UUID().uuidString)"
         var body = Data()
-        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(Data("--(boundary)
+Content-Disposition: form-data; name="file"; filename="image.jpg"
+Content-Type: image/jpeg
+
+".utf8))
         body.append(jpeg)
-        body.append("\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"save_incident\"\r\n\r\n\(saveIncident ? "true" : "false")\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("
+--(boundary)
+Content-Disposition: form-data; name="save_incident"
+
+(saveIncident ? "true" : "false")
+".utf8))
+        body.append(Data("--(boundary)--
+".utf8))
         return try await request("/detect", method: "POST", body: body,
             contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120)
     }

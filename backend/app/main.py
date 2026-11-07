@@ -420,28 +420,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         incident_id = None
         if out.classification != "none":
-            cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
-            row = db.create_incident(
-                title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
-                description="Автоматически создано после ручного анализа одного кадра камеры. "
-                            "Требуется проверка оператором.",
-                source="camera", camera_id=camera_id,
-                location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
-                severity=severity_for(out.classification, out.confidence),
-                classification=out.classification, confidence=out.confidence,
-                detection_mode=det["mode"], media_type="image",
-                media_path=ann_rel or rel,
-                media_note=("Кадр получен из подключённого видеопотока. "
-                            "Демо-эвристика не является подтверждённым обнаружением."
-                            if det["mode"] != "real_model" else
-                            "Кадр из видеопотока, проанализированный YOLO. Требуется подтверждение человеком."),
-                is_demo=det["mode"] != "real_model", detection_id=det_id,
-            )
-            db.link_detection(det_id, row["id"])
-            incident_id = row["id"]
-            if det["mode"] == "real_model":
-                notify(to_incident(row), background)
-            det = db.get_detection(det_id) or det
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+            existing = None
+            for candidate in db.list_incidents(limit=500):
+                if (candidate.get("camera_id") != camera_id
+                        or candidate.get("status") not in ("new", "acknowledged")
+                        or candidate.get("classification") != out.classification
+                        or candidate.get("detection_mode") != det["mode"]):
+                    continue
+                try:
+                    created = datetime.fromisoformat(
+                        str(candidate["created_at"]).replace("Z", "+00:00")
+                    )
+                    if created >= cutoff:
+                        existing = candidate
+                        break
+                except (KeyError, TypeError, ValueError):
+                    continue
+
+            if existing:
+                # Сохраняем новую детекцию, но не плодим одинаковые активные тревоги.
+                db.link_detection(det_id, existing["id"])
+                incident_id = existing["id"]
+            else:
+                cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
+                row = db.create_incident(
+                    title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
+                    description="Автоматически создано после анализа одного кадра камеры. "
+                                "Требуется проверка оператором.",
+                    source="camera", camera_id=camera_id,
+                    location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
+                    severity=severity_for(out.classification, out.confidence),
+                    classification=out.classification, confidence=out.confidence,
+                    detection_mode=det["mode"], media_type="image",
+                    media_path=ann_rel or rel,
+                    media_note=("Кадр получен из подключённого видеопотока. "
+                                "Демо-эвристика не является подтверждённым обнаружением."
+                                if det["mode"] != "real_model" else
+                                "Кадр из видеопотока, проанализированный YOLO. Требуется подтверждение человеком."),
+                    is_demo=det["mode"] != "real_model", detection_id=det_id,
+                )
+                db.link_detection(det_id, row["id"])
+                incident_id = row["id"]
+                if det["mode"] == "real_model":
+                    notify(to_incident(row), background)
+                det = db.get_detection(det_id) or det
 
         result = to_detection_result(det)
         result.incident_id = incident_id

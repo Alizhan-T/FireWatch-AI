@@ -149,6 +149,14 @@ private struct CameraDetailView: View {
                         description: Text("RTSP можно проверить и анализировать на сервере. Для просмотра на iPhone нужен HLS-поток."))
                 }
 
+                if let snapshot = currentCamera.snapshot_url {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Последний полученный кадр").font(.headline)
+                        ProtectedMediaImage(api: api, path: snapshot)
+                            .frame(maxHeight: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                }
                 LabeledContent("Статус", value: currentCamera.status ?? "Не проверена")
                 LabeledContent("Координаты", value: "\(currentCamera.lat), \(currentCamera.lon)")
                 if let checked = currentCamera.last_checked_at {
@@ -236,7 +244,9 @@ private struct CameraDetailView: View {
         .navigationTitle(camera.name)
         .onAppear {
             if isHLS, let url = URL(string: currentCamera.url) {
-                player = AVPlayer(url: url)
+                let streamPlayer = AVPlayer(url: url)
+                player = streamPlayer
+                streamPlayer.play()
             }
         }
         .onDisappear {

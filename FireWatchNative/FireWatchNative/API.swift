@@ -174,6 +174,13 @@ final class API: ObservableObject {
         }
     }
 
+    func setMonitoring(enabled: Bool) async throws -> MonitoringStatus {
+        let route = enabled ? "/monitoring/start" : "/monitoring/stop"
+        let result: MonitoringStatus = try await request(route, method: "POST", timeout: 30)
+        await refresh()
+        return result
+    }
+
     func addCamera(name: String, streamURL: String, lat: Double, lon: Double) async throws {
         struct Payload: Encodable { let name: String; let url: String; let lat: Double; let lon: Double }
         let payload = Payload(name: name, url: streamURL, lat: lat, lon: lon)
@@ -223,14 +230,37 @@ final class API: ObservableObject {
             body: JSONEncoder().encode(payload), contentType: "application/json")
     }
 
-    func detect(jpeg: Data, saveIncident: Bool = false) async throws -> DetectionSummary {
+    func detect(
+        jpeg: Data,
+        saveIncident: Bool = false,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        locationName: String? = nil
+    ) async throws -> DetectionSummary {
         let boundary = "FireWatch-\(UUID().uuidString)"
         var body = Data()
+
+        func appendField(_ name: String, _ value: String) {
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+            body.append(Data("\(value)\r\n".utf8))
+        }
+
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
         body.append(jpeg)
-        body.append(Data("\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"save_incident\"\r\n\r\n\(saveIncident ? "true" : "false")\r\n".utf8))
+        body.append(Data("\r\n".utf8))
+        appendField("save_incident", saveIncident ? "true" : "false")
+        if let latitude { appendField("lat", String(latitude)) }
+        if let longitude { appendField("lon", String(longitude)) }
+        if let locationName, !locationName.isEmpty {
+            appendField("location_name", locationName)
+        }
         body.append(Data("--\(boundary)--\r\n".utf8))
-        return try await request("/detect", method: "POST", body: body,
-            contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120)
-    }
-}
+
+        let result: DetectionSummary = try await request(
+            "/detect", method: "POST", body: body,
+            contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120
+        )
+        if result.incident_id != nil { await refresh() }
+        return result
+    }}

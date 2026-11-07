@@ -52,9 +52,13 @@ struct DetectionView: View {
                         Button(analyzing ? "Анализ..." : "Проверить на огонь и дым") {
                             let lat = Double(latitude.replacingOccurrences(of: ",", with: "."))
                             let lon = Double(longitude.replacingOccurrences(of: ",", with: "."))
-                            if saveIncident && (lat == nil || lon == nil || !(-90...90).contains(lat!) || !(-180...180).contains(lon!)) {
-                                error = "Для создания инцидента укажите корректные широту и долготу."
-                                return
+                            if saveIncident {
+                                guard let lat, let lon,
+                                      (-90...90).contains(lat),
+                                      (-180...180).contains(lon) else {
+                                    error = "Для создания инцидента укажите корректные широту и долготу."
+                                    return
+                                }
                             }
                             Task {
                                 guard let jpeg = image.jpegData(compressionQuality: 0.8) else {

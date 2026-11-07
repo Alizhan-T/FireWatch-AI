@@ -101,6 +101,13 @@ struct CameraLibraryView: View {
                         Text("Публичные кандидаты не найдены.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                if api.cameras.isEmpty {
+                    Section {
+                        ContentUnavailableView("Камеры не добавлены", systemImage: "video.slash",
+                            description: Text("Добавьте разрешённый HLS/RTSP-поток или выберите публичный кандидат выше."))
+                            .frame(minHeight: 100)
+                    }
+                }
                 ForEach(api.cameras) { camera in
                     NavigationLink {
                         CameraDetailView(api: api, camera: camera)
@@ -117,12 +124,7 @@ struct CameraLibraryView: View {
                     }
                 }
             }
-            .overlay {
-                if api.cameras.isEmpty {
-                    ContentUnavailableView("Камеры не добавлены", systemImage: "video.slash",
-                        description: Text("Добавьте разрешённый HLS/RTSP-поток или откройте каталог публичных камер Казахстана выше."))
-                }
-            }
+
             .navigationTitle("Камеры")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

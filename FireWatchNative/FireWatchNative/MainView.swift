@@ -7,6 +7,7 @@ private enum Palette {
 
 struct MainView: View {
     @StateObject private var api = API()
+    @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
 
     var body: some View {
@@ -18,7 +19,19 @@ struct MainView: View {
             DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }
         }
         .tint(Palette.accent)
-        .task { await api.refresh() }
+        .task {
+            await api.refresh()
+            if let token = pushManager.fcmToken {
+                try? await api.registerDevice(token: token)
+            }
+        }
+        .onChange(of: pushManager.fcmToken) { _, token in
+            guard let token else { return }
+            Task {
+                do { try await api.registerDevice(token: token) }
+                catch { api.error = error.localizedDescription }
+            }
+        }
     }
 
     private var dashboard: some View {
@@ -182,6 +195,18 @@ struct MainView: View {
                     if let error = api.error {
                         Text(error).font(.footnote).foregroundStyle(.red)
                     }
+                }
+                Section("Push-уведомления") {
+                    Text(pushManager.status).font(.footnote).foregroundStyle(.secondary)
+                    Button("Запросить разрешение на уведомления") {
+                        Task { await pushManager.requestPermission() }
+                    }
+                    if pushManager.fcmToken != nil {
+                        Label("FCM-токен получен", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Text("Для push нужны Firebase-проект, GoogleService-Info.plist, APNs key в Firebase и capability Push Notifications в Xcode.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Состояние сервера") {
                     LabeledContent("Подключение", value: api.isConnected ? "Подключён" : "Не подключён")

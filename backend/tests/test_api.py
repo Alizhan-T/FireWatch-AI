@@ -136,7 +136,10 @@ def test_detect_and_save_incident(client, fire_jpg):
     assert j["detection_id"] == det["id"] and j["media_type"] == "image"
 
 
-def test_detect_save_incident_flag(client, fire_jpg):
+def test_detect_save_incident_flag(client, fire_jpg, monkeypatch):
+    push_calls = []
+    monkeypatch.setattr("app.main.push.send_incident_alert",
+                        lambda *args, **kwargs: push_calls.append(args))
     r = client.post("/detect", data={"save_incident": "true", "lat": "51.0", "lon": "71.0"},
                     files={"file": ("fire.jpg", fire_jpg, "image/jpeg")})
     j = r.json()
@@ -145,6 +148,7 @@ def test_detect_save_incident_flag(client, fire_jpg):
     inc = client.get(f"/incidents/{j['incident_id']}").json()
     assert inc["lat"] == 51.0 and inc["source"] == "detection"
     assert inc["is_demo"] is True
+    assert push_calls == []
 
 
 def test_network_info_and_cameras_crud(client, tmp_path, monkeypatch):

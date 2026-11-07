@@ -26,6 +26,12 @@ async def _run(*cmd: str, timeout: float) -> tuple[int, str, str]:
         proc.kill()
         await proc.wait()
         raise CaptureError(f"{cmd[0]} timed out after {timeout}s")
+    except asyncio.CancelledError:
+        # Do not leave orphan FFmpeg/yt-dlp processes when monitoring is stopped.
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
     return proc.returncode or 0, out.decode(errors="ignore"), err.decode(errors="ignore")
 
 

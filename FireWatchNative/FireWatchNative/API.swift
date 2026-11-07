@@ -263,4 +263,5 @@ final class API: ObservableObject {
         )
         if result.incident_id != nil { await refresh() }
         return result
-    }}
+    }
+}

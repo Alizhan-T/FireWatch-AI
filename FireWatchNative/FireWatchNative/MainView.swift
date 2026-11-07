@@ -257,6 +257,9 @@ struct MainView: View {
                     if let scanError = api.health?.camera_auto_scan_last_error, !scanError.isEmpty {
                         Text(scanError).font(.footnote).foregroundStyle(.orange)
                     }
+                    if let apiError = api.error, !apiError.isEmpty {
+                        Text(apiError).font(.footnote).foregroundStyle(.red)
+                    }
                     Button {
                         let shouldEnable = api.health?.camera_auto_scan_active != true
                         monitoringBusy = true

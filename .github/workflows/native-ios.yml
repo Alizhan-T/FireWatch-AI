@@ -1,0 +1,23 @@
+name: Native iOS build
+on:
+  push:
+    branches: [feature/native-ios-swiftui]
+  pull_request:
+    paths:
+      - 'FireWatchNative/**'
+      - '.github/workflows/native-ios.yml'
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: cd FireWatchNative && xcodegen generate
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild -project FireWatchNative/FireWatchNative.xcodeproj \
+            -scheme FireWatchNative -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build

@@ -72,7 +72,7 @@ The app links to [PocketWorld's Kazakhstan webcam directory](https://pocketworld
 - **Map:** shows incident and configured-camera coordinates.
 - Demo, simulated and heuristic results are labelled; every suspected fire still requires human verification.
 
-There is no continuous 24/7 camera scanning worker in this version. Camera analysis is user-triggered to avoid silently consuming bandwidth/CPU and generating unattended false alarms.
+Continuous camera scanning is opt-in and disabled by default. To enable it, set `CAMERA_AUTO_SCAN_ENABLED=true` and `CAMERA_AUTO_SCAN_INTERVAL_SEC=120` in `backend/.env`, then restart the backend. The worker starts only if the real YOLO model loaded and FFmpeg is available; it does not run with the demo heuristic. It scans configured cameras sequentially and suppresses repeat active alerts from the same camera for 10 minutes. Start with a small number of permitted feeds and monitor CPU/network use. Manual one-frame analysis remains available from the camera detail screen.
 
 ## 6. Push notifications (optional setup)
 

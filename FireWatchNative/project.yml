@@ -26,6 +26,14 @@ targets:
       - path: FireWatchNative
     info:
       path: Info.plist
+    attributes:
+      SystemCapabilities:
+        com.apple.Push:
+          enabled: 1
+    entitlements:
+      path: FireWatchNative.entitlements
+      properties:
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kz.firewatch.native

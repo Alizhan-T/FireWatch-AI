@@ -684,7 +684,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             db.link_detection(det_id, row["id"])
             incident_id = row["id"]
-            notify(to_incident(row), background)
+            # Heuristic/demo results remain visible in-app but never trigger emergency push alerts.
+            if not bool(row.get("is_demo")):
+                notify(to_incident(row), background)
             det = db.get_detection(det_id) or det
 
         res = to_detection_result(det)

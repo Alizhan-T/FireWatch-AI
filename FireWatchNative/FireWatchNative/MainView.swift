@@ -215,6 +215,10 @@ struct MainView: View {
                     LabeledContent("Подключение", value: api.isConnected ? "Подключён" : "Не подключён")
                     LabeledContent("База данных", value: api.health?.database == true ? "Работает" : "Нет связи")
                     LabeledContent("FFmpeg", value: api.health?.ffmpeg == true ? "Установлен" : "Не обнаружен")
+                    LabeledContent("Автосканирование", value: api.health?.camera_auto_scan_active == true ? "Активно" : api.health?.camera_auto_scan_enabled == true ? "Включено, но не запущено" : "Выключено")
+                    if let interval = api.health?.camera_auto_scan_interval_sec {
+                        LabeledContent("Интервал сканирования", value: "\(interval) сек.")
+                    }
                     LabeledContent("Firebase", value: api.health?.firebase ?? "Неизвестно")
                     LabeledContent("Камер", value: "\(api.health?.cameras_configured ?? 0)")
                 }

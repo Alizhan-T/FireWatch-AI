@@ -4,6 +4,44 @@ import AVKit
 struct CameraLibraryView: View {
     @ObservedObject var api: API
     @State private var showingAdd = false
+    @State private var candidates: [CameraCandidate] = []
+    @State private var candidateLoading = false
+    @State private var candidateError: String?
+    @State private var candidateProgressID: String?
+    @State private var candidateResults: [String: String] = [:]
+
+    private func loadCandidates() async {
+        candidateLoading = true
+        do {
+            candidates = try await api.fetchCameraCandidates()
+            candidateError = nil
+        } catch {
+            candidateError = error.localizedDescription
+        }
+        candidateLoading = false
+    }
+
+    private func addAndCheck(_ candidate: CameraCandidate) {
+        guard !api.cameras.contains(where: { $0.url == candidate.url }) else { return }
+        candidateProgressID = candidate.id
+        Task {
+            do {
+                let camera = try await api.addCamera(
+                    name: candidate.name,
+                    streamURL: candidate.url,
+                    lat: candidate.lat,
+                    lon: candidate.lon
+                )
+                let checked = try await api.checkCamera(camera)
+                candidateResults[candidate.id] = checked.status == "online"
+                    ? "Поток доступен — камера добавлена."
+                    : "Камера добавлена, но поток не отвечает: \(checked.last_error ?? "причина не указана")."
+            } catch {
+                candidateResults[candidate.id] = error.localizedDescription
+            }
+            candidateProgressID = nil
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -16,6 +54,52 @@ struct CameraLibraryView: View {
                     }
                     Text("Каталог содержит публичные ссылки и метаданные, но не гарантирует, что каждый поток доступен сейчас или разрешён для автоматического AI-анализа.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Открытые камеры Казахстана") {
+                    Text("Это кандидаты из публичного каталога Актау, а не подтверждённые рабочие потоки. При добавлении FireWatch сразу проверит URL через FFmpeg. Это городские и прибрежные камеры, не специализированные лесные посты.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if candidateLoading {
+                        ProgressView("Загружаем каталог…")
+                    }
+                    if let candidateError {
+                        Text(candidateError).font(.footnote).foregroundStyle(.red)
+                    }
+                    ForEach(candidates) { candidate in
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(candidate.name).font(.subheadline.bold())
+                            Text("HLS · \(candidate.lat), \(candidate.lon)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(candidate.verification_note)
+                                .font(.caption2).foregroundStyle(.secondary)
+                            HStack {
+                                if let sourceURL = URL(string: candidate.source_url) {
+                                    Link("Оператор", destination: sourceURL)
+                                }
+                                if let catalogURL = URL(string: candidate.catalog_url) {
+                                    Link("Каталог", destination: catalogURL)
+                                }
+                                Spacer()
+                                if api.cameras.contains(where: { $0.url == candidate.url }) {
+                                    Label("Добавлена", systemImage: "checkmark.circle.fill")
+                                        .font(.caption).foregroundStyle(.green)
+                                } else if candidateProgressID == candidate.id {
+                                    ProgressView()
+                                } else {
+                                    Button("Добавить и проверить") {
+                                        addAndCheck(candidate)
+                                    }
+                                    .font(.caption.bold())
+                                }
+                            }
+                            if let result = candidateResults[candidate.id] {
+                                Text(result).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    if !candidateLoading && candidates.isEmpty && candidateError == nil {
+                        Text("Публичные кандидаты не найдены.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 ForEach(api.cameras) { camera in
                     NavigationLink {
@@ -46,7 +130,11 @@ struct CameraLibraryView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { AddCameraView(api: api) }
-            .refreshable { await api.refresh() }
+            .task { await loadCandidates() }
+            .refreshable {
+                await api.refresh()
+                await loadCandidates()
+            }
         }
     }
 }
@@ -98,7 +186,7 @@ private struct AddCameraView: View {
                         saving = true
                         Task {
                             do {
-                                try await api.addCamera(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                _ = try await api.addCamera(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                                         streamURL: url.trimmingCharacters(in: .whitespacesAndNewlines),
                                                         lat: latitude, lon: longitude)
                                 dismiss()
@@ -209,7 +297,7 @@ private struct CameraDetailView: View {
                     checking = true
                     Task {
                         do {
-                            try await api.checkCamera(camera)
+                            _ = try await api.checkCamera(camera)
                             error = nil
                         } catch {
                             self.error = error.localizedDescription

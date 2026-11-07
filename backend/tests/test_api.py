@@ -10,6 +10,7 @@ def test_health(client):
     assert j["firebase"] == "not_configured"
     assert j["camera_auto_scan_enabled"] is False
     assert j["camera_auto_scan_active"] is False
+    assert "/monitoring/status" in client.get("/openapi.json").json()["paths"]
 
 
 def test_docs_available(client):
@@ -17,7 +18,8 @@ def test_docs_available(client):
     spec = client.get("/openapi.json").json()
     for path in ["/health", "/cameras", "/incidents", "/incidents/{incident_id}",
                  "/detect", "/register_device", "/simulate_fire",
-                 "/cameras/{camera_id}/analyze", "/incidents/{incident_id}/status"]:
+                 "/cameras/{camera_id}/analyze", "/incidents/{incident_id}/status",
+                 "/monitoring/status", "/monitoring/start", "/monitoring/stop"]:
         assert path in spec["paths"], path
 
 
@@ -381,3 +383,80 @@ def test_auto_scan_requires_real_detector(tmp_path):
         health = scan_client.get("/health").json()
         assert health["camera_auto_scan_enabled"] is True
         assert health["camera_auto_scan_active"] is False
+
+
+def test_monitoring_is_blocked_without_real_model(client):
+    status = client.get("/monitoring/status")
+    assert status.status_code == 200
+    assert status.json()["active"] is False
+    start = client.post("/monitoring/start")
+    assert start.status_code == 409
+    assert "реальной YOLO-модели" in start.json()["detail"]
+    stop = client.post("/monitoring/stop")
+    assert stop.status_code == 200
+    assert stop.json()["active"] is False
+
+
+def test_monitoring_start_stop_with_real_model(tmp_path, monkeypatch, fire_jpg):
+    import time
+    from fastapi.testclient import TestClient
+    from app import capture, main
+    from app.config import Settings
+    from app.detection.base import DetectorOutput
+    from app.main import create_app
+
+    class FakeRealDetector:
+        mode = "real_model"
+        provider = "test-real-model"
+        model_name = "test-fire-model"
+        disclaimer = "Test model only."
+
+        def detect(self, image_path):
+            return DetectorOutput(False, False, 0.0, [])
+
+    settings = Settings()
+    settings.database_path = tmp_path / "monitoring.db"
+    settings.media_dir = tmp_path / "monitoring-media"
+    settings.demo_assets_dir = tmp_path / "demo-assets"
+    settings.cameras_file = tmp_path / "monitoring-cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.firebase_credentials = ""
+    settings.camera_auto_scan_enabled = False
+    settings.camera_auto_scan_interval_sec = 30
+
+    monkeypatch.setattr(main, "build_detector", lambda _: (FakeRealDetector(), None))
+    monkeypatch.setattr(capture, "ffmpeg_available", lambda: True)
+
+    async def fake_grab_stream_frame(stream_url, output_jpg, timeout=15):
+        output_jpg.parent.mkdir(parents=True, exist_ok=True)
+        output_jpg.write_bytes(fire_jpg)
+        return output_jpg
+
+    monkeypatch.setattr(capture, "grab_stream_frame", fake_grab_stream_frame)
+
+    with TestClient(create_app(settings)) as monitor_client:
+        added = monitor_client.post("/cameras", json={
+            "name": "Monitoring test camera",
+            "url": "https://camera.example/live.m3u8",
+            "lat": 51.1694,
+            "lon": 71.4491,
+        })
+        assert added.status_code == 201, added.text
+
+        started = monitor_client.post("/monitoring/start")
+        assert started.status_code == 200, started.text
+        assert started.json()["enabled"] is True
+        assert started.json()["active"] is True
+
+        deadline = time.monotonic() + 3
+        latest = monitor_client.get("/monitoring/status").json()
+        while latest["last_run_at"] is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+            latest = monitor_client.get("/monitoring/status").json()
+        assert latest["last_run_at"] is not None
+        assert latest["active"] is True
+
+        stopped = monitor_client.post("/monitoring/stop")
+        assert stopped.status_code == 200
+        assert stopped.json()["enabled"] is False
+        assert stopped.json()["active"] is False

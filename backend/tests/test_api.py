@@ -149,11 +149,13 @@ def test_network_info_and_cameras_crud(client, tmp_path, monkeypatch):
     assert client.get("/cameras").json() == []
     added = client.post("/cameras", json={
         "name": "Тестовая RTSP камера",
-        "url": "rtsp://192.168.1.50:554/stream1",
+        "url": "rtsp://camera-user:camera-pass@192.168.1.50:554/stream1",
         "lat": 43.25,
         "lon": 76.95,
     })
     assert added.status_code == 201
+    assert "camera-user" not in added.json()["url"]
+    assert "camera-pass" not in added.json()["url"]
     cam_id = added.json()["id"]
     assert len(client.get("/cameras").json()) == 1
 

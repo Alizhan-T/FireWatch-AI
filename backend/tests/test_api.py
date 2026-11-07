@@ -35,6 +35,15 @@ def test_cameras(client):
     r = client.get("/cameras")
     assert r.status_code == 200
     assert all({"id", "name", "lat", "lon"} <= c.keys() for c in r.json())
+    invalid_host = client.post("/cameras", json={
+        "name": "Invalid host", "url": "https://", "lat": 51.0, "lon": 71.0
+    })
+    assert invalid_host.status_code == 422
+    invalid_port = client.post("/cameras", json={
+        "name": "Invalid port", "url": "https://camera.example:bad/live.m3u8",
+        "lat": 51.0, "lon": 71.0
+    })
+    assert invalid_port.status_code == 422
 
 
 def test_create_get_list_incident(client):

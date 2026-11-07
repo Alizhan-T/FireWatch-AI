@@ -29,7 +29,7 @@ enum FireWatchAPIError: LocalizedError {
 
 @MainActor
 final class API: ObservableObject {
-    @Published var baseURL = UserDefaults.standard.string(forKey: "firewatch.server") ?? ""
+    @Published var baseURL = UserDefaults.standard.string(forKey: "firewatch.server") ?? ""\n    @Published var apiKey = KeychainStore.load("apiKey") ?? ""
     @Published private(set) var incidents: [Incident] = []
     @Published private(set) var cameras: [Camera] = []
     @Published private(set) var stats: Stats?
@@ -48,7 +48,7 @@ final class API: ObservableObject {
             throw FireWatchAPIError.invalidServerURL
         }
         baseURL = cleaned
-        UserDefaults.standard.set(cleaned, forKey: "firewatch.server")
+        UserDefaults.standard.set(cleaned, forKey: "firewatch.server")\n        KeychainStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey")
     }
 
     func absoluteURL(for path: String?) -> URL? {
@@ -92,7 +92,7 @@ final class API: ObservableObject {
         request.httpBody = body
         if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("true", forHTTPHeaderField: "ngrok-skip-browser-warning")
+        request.setValue("true", forHTTPHeaderField: "ngrok-skip-browser-warning")\n        if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {

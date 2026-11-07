@@ -380,6 +380,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                         snapshot_path=None)
         return camera_with_status(cam)
 
+    @app.post("/cameras/{camera_id}/analyze", tags=["cameras"], response_model=DetectionResult)
+    async def analyze_camera_frame(camera_id: str, background: BackgroundTasks):
+        """Захватить текущий кадр разрешённой камеры и проанализировать его текущим детектором."""
+        cams = load_cameras()
+        cam = cams.get(camera_id)
+        if not cam:
+            raise HTTPException(404, "Камера не найдена")
+
+        det_id = new_id("det")
+        rel = f"uploads/{det_id}_camera.jpg"
+        img_path = settings.media_dir / rel
+        try:
+            async with heavy_jobs:
+                await capture.grab_stream_frame(cam["url"], img_path, timeout=20)
+                db.upsert_camera_status(camera_id, status="online", last_error=None,
+                                        snapshot_path=None)
+                out, det, ann_rel = await infer_and_store(img_path, rel, det_id)
+        except capture.CaptureError as e:
+            img_path.unlink(missing_ok=True)
+            db.upsert_camera_status(camera_id, status="offline", last_error=str(e)[:300],
+                                    snapshot_path=None)
+            raise HTTPException(502, f"Не удалось получить кадр камеры: {e}")
+
+        incident_id = None
+        if out.classification != "none":
+            cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
+            row = db.create_incident(
+                title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
+                description="Автоматически создано после ручного анализа одного кадра камеры. "
+                            "Требуется проверка оператором.",
+                source="camera", camera_id=camera_id,
+                location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
+                severity=severity_for(out.classification, out.confidence),
+                classification=out.classification, confidence=out.confidence,
+                detection_mode=det["mode"], media_type="image",
+                media_path=ann_rel or rel,
+                media_note=("Кадр получен из подключённого видеопотока. "
+                            "Демо-эвристика не является подтверждённым обнаружением."
+                            if det["mode"] != "real_model" else
+                            "Кадр из видеопотока, проанализированный YOLO. Требуется подтверждение человеком."),
+                is_demo=det["mode"] != "real_model", detection_id=det_id,
+            )
+            db.link_detection(det_id, row["id"])
+            incident_id = row["id"]
+            notify(to_incident(row), background)
+            det = db.get_detection(det_id) or det
+
+        result = to_detection_result(det)
+        result.incident_id = incident_id
+        return result
+
     @app.get("/stats", tags=["system"])
     def stats():
         inc = db.incident_stats()

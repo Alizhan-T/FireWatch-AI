@@ -533,7 +533,7 @@ def test_auto_monitoring_creates_one_incident_for_real_fire(tmp_path, monkeypatc
         assert len(incidents) == 1
         assert incidents[0]["source"] == "camera"
         assert incidents[0]["is_demo"] is False
-        assert incidents[0]["severity"] == "critical"
+        assert incidents[0]["severity"] == "high"
         assert monitor_client.app.state.db.detection_stats()["total"] == 1
 
         monitor_client.post("/monitoring/stop")

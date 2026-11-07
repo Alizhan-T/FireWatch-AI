@@ -199,6 +199,10 @@ final class API: ObservableObject {
         return result
     }
 
+    func fetchIncident(id: String) async throws -> Incident {
+        try await request("/incidents/\(id)")
+    }
+
     func updateIncident(_ incident: Incident, status: String) async throws {
         struct Payload: Encodable { let status: String }
         let _: Incident = try await request("/incidents/\(incident.id)/status", method: "PATCH",

@@ -174,6 +174,20 @@ class Database:
             ).fetchone()
         return dict(row) if row else None
 
+    def update_camera_incident_evidence(
+        self, incident_id: str, *, severity: str, confidence: float,
+        media_path: str, media_note: str, detection_id: str
+    ) -> dict | None:
+        """Refresh evidence for an unresolved alert when a stronger frame is found."""
+        with self.conn() as c:
+            c.execute(
+                "UPDATE incidents SET severity=?, confidence=?, media_path=?, media_note=?, "
+                "detection_id=?, updated_at=? WHERE id=? AND status IN ('new','acknowledged')",
+                (severity, confidence, media_path, media_note, detection_id,
+                 now_iso(), incident_id),
+            )
+        return self.get_incident(incident_id)
+
     def update_incident_status(self, incident_id: str, status: str) -> dict | None:
         with self.conn() as c:
             cur = c.execute(

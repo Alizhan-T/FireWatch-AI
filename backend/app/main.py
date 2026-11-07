@@ -424,7 +424,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ("aktau-caspian-15", "Актау — Каспий, 15-й микрорайон",
              "https://cam.xcom.kz:8081/caspy15/tracks-v1/mono.m3u8", 43.6560, 51.1375),
             ("aktau-caspian-4", "Актау — Каспий, 4-й микрорайон",
-             "https://cam.xcom.kz:8081/caspy4/tracks-v1/mono.m3u8", 43.6364, 51.1551),
+             "https://cam.xcom.kz:8081/caspy4/tracks-v1/mono.m3u8", 43.6364, 51.1553),
             ("aktau-yntymak", "Актау — площадь Ынтымак",
              "https://cam.xcom.kz:8081/yntymak/tracks-v1/mono.m3u8", 43.6445, 51.1530),
             ("aktau-drama", "Актау — драматический театр",

@@ -78,6 +78,9 @@ struct CameraLibraryView: View {
                                 if let catalogURL = URL(string: candidate.catalog_url) {
                                     Link("Каталог", destination: catalogURL)
                                 }
+                                if let streamListURL = URL(string: candidate.stream_list_url) {
+                                    Link("Список HLS", destination: streamListURL)
+                                }
                                 Spacer()
                                 if api.cameras.contains(where: { $0.url == candidate.url }) {
                                     Label("Добавлена", systemImage: "checkmark.circle.fill")

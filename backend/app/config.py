@@ -65,7 +65,7 @@ class Settings:
         in ("1", "true", "yes", "on")
     )
     camera_auto_scan_interval_sec: int = field(
-        default_factory=lambda: max(30, int(os.getenv("CAMERA_AUTO_SCAN_INTERVAL_SEC", "120")))
+        default_factory=lambda: max(10, int(os.getenv("CAMERA_AUTO_SCAN_INTERVAL_SEC", "30")))
     )
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
 

@@ -9,6 +9,7 @@ struct MainView: View {
     @StateObject private var api = API()
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
+    @State private var monitoringBusy = false
     @State private var selectedTab = 0
     @State private var pushIncident: Incident?
 
@@ -25,6 +26,15 @@ struct MainView: View {
             await api.refresh()
             if let token = pushManager.fcmToken {
                 try? await api.registerDevice(token: token)
+            }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 20_000_000_000)
+                } catch {
+                    break
+                }
+                if Task.isCancelled { break }
+                await api.refresh()
             }
         }
         .onChange(of: pushManager.fcmToken) { _, token in
@@ -202,7 +212,13 @@ struct MainView: View {
                     Button("Сохранить и проверить") {
                         do {
                             try api.saveURL()
-                            Task { await api.refresh() }
+                            Task {
+                                await api.refresh()
+                                if let token = pushManager.fcmToken {
+                                    do { try await api.registerDevice(token: token) }
+                                    catch { api.error = error.localizedDescription }
+                                }
+                            }
                             showSettings = false
                         } catch {
                             api.error = error.localizedDescription
@@ -222,6 +238,54 @@ struct MainView: View {
                             .foregroundStyle(.green)
                     }
                     Text("Для push нужны Firebase-проект, GoogleService-Info.plist, APNs key в Firebase и capability Push Notifications в Xcode.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Автоматический мониторинг") {
+                    HStack {
+                        Circle()
+                            .fill(api.health?.camera_auto_scan_active == true ? .green : .secondary)
+                            .frame(width: 9, height: 9)
+                        Text(api.health?.camera_auto_scan_active == true ? "Мониторинг запущен" : "Мониторинг остановлен")
+                            .font(.subheadline.bold())
+                    }
+                    if let current = api.health?.camera_auto_scan_current_camera {
+                        LabeledContent("Проверяется", value: current)
+                    }
+                    if let lastRun = api.health?.camera_auto_scan_last_run_at {
+                        LabeledContent("Последняя проверка", value: lastRun)
+                    }
+                    if let scanError = api.health?.camera_auto_scan_last_error, !scanError.isEmpty {
+                        Text(scanError).font(.footnote).foregroundStyle(.orange)
+                    }
+                    Button {
+                        let shouldEnable = api.health?.camera_auto_scan_active != true
+                        monitoringBusy = true
+                        Task {
+                            do {
+                                _ = try await api.setMonitoring(enabled: shouldEnable)
+                            } catch {
+                                api.error = error.localizedDescription
+                            }
+                            monitoringBusy = false
+                        }
+                    } label: {
+                        if monitoringBusy {
+                            ProgressView("Применяем…")
+                        } else {
+                            Label(
+                                api.health?.camera_auto_scan_active == true ? "Остановить мониторинг" : "Запустить мониторинг",
+                                systemImage: api.health?.camera_auto_scan_active == true ? "stop.circle.fill" : "play.circle.fill"
+                            )
+                        }
+                    }
+                    .disabled(
+                        monitoringBusy ||
+                        (api.health?.camera_auto_scan_active != true &&
+                         !(api.health?.detector?.mode == "real_model" &&
+                           api.health?.ffmpeg == true &&
+                           (api.health?.cameras_configured ?? 0) > 0))
+                    )
+                    Text("Автоматический режим доступен только при загруженной YOLO-модели, установленном FFmpeg и хотя бы одной добавленной камере. Сервер проверяет кадры по очереди.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Состояние сервера") {

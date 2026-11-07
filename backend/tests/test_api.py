@@ -289,3 +289,60 @@ def test_stats_breakdown_and_latest_detection(client, fire_jpg):
     assert st["latest_detection"] is not None
     assert "id" in st["latest_detection"] and "classification" in st["latest_detection"]
 
+
+
+def test_camera_frame_analysis_creates_reviewable_incident(client, tmp_path, monkeypatch, fire_jpg):
+    from app import capture
+
+    cam_file = tmp_path / "camera_analyze.json"
+    cam_file.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(client.app.state.settings, "cameras_file", cam_file)
+    added = client.post("/cameras", json={
+        "name": "Test public HLS camera",
+        "url": "https://camera.example/live.m3u8",
+        "lat": 43.25,
+        "lon": 76.95,
+    })
+    assert added.status_code == 201, added.text
+    camera = added.json()
+
+    async def fake_grab_stream_frame(stream_url, output_jpg, timeout=15):
+        output_jpg.parent.mkdir(parents=True, exist_ok=True)
+        output_jpg.write_bytes(fire_jpg)
+        return output_jpg
+
+    monkeypatch.setattr(capture, "grab_stream_frame", fake_grab_stream_frame)
+    response = client.post(f"/cameras/{camera['id']}/analyze")
+    assert response.status_code == 200, response.text
+    detection = response.json()
+    assert detection["status"] == "completed"
+    assert detection["mode"] == "demo_heuristic"
+    assert detection["incident_id"]
+
+    incident = client.get(f"/incidents/{detection['incident_id']}").json()
+    assert incident["source"] == "camera"
+    assert incident["camera_id"] == camera["id"]
+    assert incident["is_demo"] is True
+    assert incident["status"] == "new"
+
+
+def test_optional_api_key_guard(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings()
+    settings.database_path = tmp_path / "secure.db"
+    settings.media_dir = tmp_path / "secure-media"
+    settings.demo_assets_dir = tmp_path / "demo_assets"
+    settings.cameras_file = tmp_path / "cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.detector = "heuristic"
+    settings.firebase_credentials = ""
+    settings.api_access_token = "test-secret-token"
+
+    with TestClient(create_app(settings)) as secure_client:
+        assert secure_client.get("/health").status_code == 200
+        assert secure_client.get("/stats").status_code == 401
+        ok = secure_client.get("/stats", headers={"X-API-Key": "test-secret-token"})
+        assert ok.status_code == 200

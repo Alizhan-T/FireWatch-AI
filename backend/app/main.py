@@ -408,6 +408,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "localhost_url": f"http://127.0.0.1:{settings.port}",
         }
 
+    @app.get("/camera-candidates", tags=["cameras"])
+    def camera_candidates():
+        """Unverified public HLS candidates; users must check availability and operator permissions."""
+        source_note = (
+            "Кандидат из открытых каталогов веб-камер Казахстана. "
+            "HLS-адрес найден в опубликованном M3U-списке и не проверен этим сервером. "
+            "Перед AI-анализом проверьте доступность и разрешение оператора."
+        )
+        source_url = "https://cam.xcom.kz/"
+        catalog_url = "https://pocketworld.org/ru/webcams/country/kz"
+        rows = [
+            ("aktau-caspian-14", "Актау — Каспий, 14-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy14/tracks-v1/mono.m3u8", 43.6545, 51.1385),
+            ("aktau-caspian-15", "Актау — Каспий, 15-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy15/tracks-v1/mono.m3u8", 43.6560, 51.1375),
+            ("aktau-caspian-4", "Актау — Каспий, 4-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy4/tracks-v1/mono.m3u8", 43.6364, 51.1551),
+            ("aktau-yntymak", "Актау — площадь Ынтымак",
+             "https://cam.xcom.kz:8081/yntymak/tracks-v1/mono.m3u8", 43.6445, 51.1530),
+            ("aktau-drama", "Актау — драматический театр",
+             "https://cam.xcom.kz:8081/dramteatr/tracks-v1/mono.m3u8", 43.6397, 51.1521),
+            ("aktau-13-microdistrict", "Актау — 13-й микрорайон",
+             "https://cam.xcom.kz:8081/13-1/tracks-v1/index.m3u8", 43.6315, 51.1595),
+        ]
+        return [
+            {"id": item[0], "name": item[1], "url": item[2], "lat": item[3],
+             "lon": item[4], "source_name": "XCOM Aktau",
+             "source_url": source_url, "catalog_url": catalog_url,
+             "verification_note": source_note, "verified": False}
+            for item in rows
+        ]
+
     # ---------------- cameras (только реально добавленные RTSP/HLS) ----------------
     @app.get("/cameras", tags=["cameras"], response_model=list[CameraWithStatus])
     def cameras():

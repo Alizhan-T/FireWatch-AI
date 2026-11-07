@@ -71,6 +71,9 @@ struct ServerHealth: Decodable {
     let ffmpeg: Bool?
     let detector: DetectorHealth?
     let firebase: String?
+    let camera_auto_scan_enabled: Bool?
+    let camera_auto_scan_active: Bool?
+    let camera_auto_scan_interval_sec: Int?
     let cameras_configured: Int?
     let demo_videos_available: Int?
     let server_time: String?

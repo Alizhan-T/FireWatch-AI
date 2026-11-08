@@ -7,18 +7,31 @@ struct CameraLibraryView: View {
     @State private var candidates: [CameraCandidate] = []
     @State private var candidateLoading = false
     @State private var candidateError: String?
+    @State private var usingBundledCatalogue = false
     @State private var candidateProgressID: String?
     @State private var candidateResults: [String: String] = [:]
 
     private func loadCandidates() async {
         candidateLoading = true
+        defer { candidateLoading = false }
+
+        guard !api.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            candidates = PublicCameraCatalog.candidates
+            usingBundledCatalogue = true
+            candidateError = nil
+            return
+        }
+
         do {
-            candidates = try await api.fetchCameraCandidates()
+            let remoteCandidates = try await api.fetchCameraCandidates()
+            candidates = remoteCandidates.isEmpty ? PublicCameraCatalog.candidates : remoteCandidates
+            usingBundledCatalogue = remoteCandidates.isEmpty
             candidateError = nil
         } catch {
-            candidateError = error.localizedDescription
+            candidates = PublicCameraCatalog.candidates
+            usingBundledCatalogue = !candidates.isEmpty
+            candidateError = candidates.isEmpty ? error.localizedDescription : nil
         }
-        candidateLoading = false
     }
 
     private func addAndCheck(_ candidate: CameraCandidate) {
@@ -58,6 +71,10 @@ struct CameraLibraryView: View {
                 Section("Открытые камеры Казахстана") {
                     Text("Это кандидаты из публичного каталога Актау, а не подтверждённые рабочие потоки. При добавлении FireWatch сразу проверит URL через FFmpeg. Это городские и прибрежные камеры, не специализированные лесные посты.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if usingBundledCatalogue {
+                        Label("Встроенный список: видео можно открыть без сервера FireWatch.", systemImage: "wifi.slash")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if candidateLoading {
                         ProgressView("Загружаем каталог…")
                     }
@@ -72,6 +89,12 @@ struct CameraLibraryView: View {
                             Text(candidate.verification_note)
                                 .font(.caption2).foregroundStyle(.secondary)
                             HStack {
+                                NavigationLink {
+                                    PublicCameraDetailView(candidate: candidate)
+                                } label: {
+                                    Label("Смотреть", systemImage: "play.fill")
+                                }
+                                .font(.caption.bold())
                                 if let sourceURL = URL(string: candidate.source_url) {
                                     Link("Оператор", destination: sourceURL)
                                 }
@@ -87,6 +110,9 @@ struct CameraLibraryView: View {
                                         .font(.caption).foregroundStyle(.green)
                                 } else if candidateProgressID == candidate.id {
                                     ProgressView()
+                                } else if !api.isConnected {
+                                    Label("AI требует backend", systemImage: "server.rack")
+                                        .font(.caption2).foregroundStyle(.secondary)
                                 } else {
                                     Button("Добавить и проверить") {
                                         addAndCheck(candidate)
@@ -103,6 +129,20 @@ struct CameraLibraryView: View {
                     if !candidateLoading && candidates.isEmpty && candidateError == nil {
                         Text("Публичные кандидаты не найдены.").font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                Section("Природные территории") {
+                    Text("«Акжайык»: в публикации от июня 2025 года указана открытая трансляция с наблюдательных вышек. Текущий статус эфира не подтверждён; ссылка может открыть запись.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if let videoURL = URL(string: PublicCameraCatalog.akzhaiykVideoURL) {
+                        Link(destination: videoURL) {
+                            Label("Открыть видео «Акжайык» на YouTube", systemImage: "play.rectangle")
+                        }
+                    }
+                    if let announcementURL = URL(string: PublicCameraCatalog.akzhaiykAnnouncementURL) {
+                        Link("Источник и описание трансляции", destination: announcementURL)
+                    }
+                    Text("Видео открывается у издателя. Автоматический анализ YouTube-потока в FireWatch не выполняется.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if api.cameras.isEmpty {
                     Section {
@@ -140,6 +180,59 @@ struct CameraLibraryView: View {
                 await api.refresh()
                 await loadCandidates()
             }
+        }
+    }
+}
+
+private struct PublicCameraDetailView: View {
+    let candidate: CameraCandidate
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let player {
+                    VideoPlayer(player: player)
+                        .frame(height: 250)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                } else {
+                    ContentUnavailableView("Поток не открылся", systemImage: "video.slash",
+                        description: Text("Проверьте ссылку у оператора. Встроенный каталог не проверяет доступность потока в реальном времени."))
+                        .frame(height: 250)
+                }
+
+                Text(candidate.name).font(.title3.bold())
+                Label("Открытый HLS-поток · просмотр напрямую", systemImage: "globe")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Text("Для просмотра этого публичного видео сервер FireWatch не нужен. Проверка камеры через FFmpeg, AI-анализ кадра, сохранение событий и непрерывный мониторинг требуют подключённого backend.")
+                    .font(.footnote)
+                Text("Доступность трансляции, задержка и разрешение на автоматический анализ зависят от оператора. Этот городской поток не является лесным постом наблюдения.")
+                    .font(.footnote).foregroundStyle(.secondary)
+
+                LabeledContent("Координаты", value: "\(candidate.lat), \(candidate.lon)")
+                if let url = URL(string: candidate.source_url) {
+                    Link("Открыть страницу оператора", destination: url)
+                }
+                if let url = URL(string: candidate.catalog_url) {
+                    Link("Источник каталога и расположения", destination: url)
+                }
+                if let url = URL(string: candidate.url) {
+                    Link("Открыть прямую ссылку HLS", destination: url)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Публичная камера")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard player == nil, let url = URL(string: candidate.url) else { return }
+            let streamPlayer = AVPlayer(url: url)
+            player = streamPlayer
+            streamPlayer.play()
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
         }
     }
 }

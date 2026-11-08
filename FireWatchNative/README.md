@@ -52,6 +52,8 @@ All diagnostic/data routes, including `/health` and `/ready`, require `X-API-Key
 
 ## 4. Camera workflow
 
+The **Cameras** tab includes a bundled list of six public HLS links from the Aktau XCOM catalogue. You can open and watch these feeds on an iPhone without configuring or running a FireWatch server. The list is a set of candidates: availability can change, and permission to view does not automatically grant permission for AI processing. These are city/coast views, not dedicated forest lookout cameras. The tab also links to the publicly announced Akzhaiyk reserve tower stream on YouTube; its current live status is not confirmed, and it opens at the publisher rather than inside FireWatch.
+
 1. Use a camera URL supplied by its owner/operator or a public source that explicitly permits viewing and automated analysis.
 2. Open **Cameras → +**, enter a name, direct HLS (`.m3u8`) or RTSP URL and the camera's actual coordinates.
 3. Open the camera and select **Check stream via FFmpeg**. The backend tries to capture a real frame and records online/offline status.
@@ -94,6 +96,7 @@ Implemented in this branch:
 - Native SwiftUI dashboard, five-tab navigation, MapKit markers.
 - Typed API client with detailed HTTP errors, server health checks and secure Keychain API-key storage.
 - Camera registration/deletion, FFmpeg stream check, HLS playback and manual single-frame AI analysis.
+- Direct viewing of the bundled public HLS candidates without a backend; AI analysis and continuous monitoring still require the FastAPI backend.
 - Photo upload to YOLO backend, incident details/evidence, status update and deletion.
 - Optional Firebase Messaging integration, gated on the user's Firebase/APNs configuration.
 - GitHub Actions compile workflow and backend pytest workflow.

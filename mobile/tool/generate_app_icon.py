@@ -22,16 +22,13 @@ SCALE = 4
 # Draw at 4x resolution for clean antialiasing.
 n = SIZE * SCALE
 img = Image.new("RGB", (n, n), (8, 15, 29))
-px = img.load()
+gradient = ImageDraw.Draw(img)
 for y in range(n):
     t = y / max(1, n - 1)
-    for x in range(n):
-        glow = max(0.0, 1.0 - math.sqrt(((x/n)-0.50)**2 + ((y/n)-0.43)**2) / 0.78)
-        px[x, y] = (
-            int(7 + 8*t + 5*glow),
-            int(15 + 8*t + 4*glow),
-            int(29 + 13*t + 7*glow),
-        )
+    gradient.line(
+        (0, y, n, y),
+        fill=(int(7 + 8*t), int(15 + 8*t), int(29 + 13*t)),
+    )
 
 draw = ImageDraw.Draw(img, "RGBA")
 

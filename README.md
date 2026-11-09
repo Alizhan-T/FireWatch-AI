@@ -186,3 +186,27 @@ The application works out-of-the-box **without Firebase** using in-app alert ban
 1. **Camera & Call Hardware on iOS Simulator**: The iOS Simulator does not provide a physical camera or phone dialer (`tel:112`). The app catches these platform limitations gracefully and provides gallery/sample image upload and a copyable incident report brief.
 2. **APNs on Simulator / Unconfigured Firebase**: Remote push notifications require `GoogleService-Info.plist` and an Apple Developer APNs key; when unconfigured, the app automatically falls back to in-app notification banners.
 3. **Computer Vision Accuracy**: YOLOv8n (D-Fire) is a lightweight edge model (`mAP50 = 0.754` on D-Fire test split) and can produce false positives on bright sunsets, glare, or dense fog. Human verification is always required.
+
+## 11. iOS App Icon & Physical iPhone Connection
+
+### Generate the FireWatch AI flame/shield app icon
+The repository includes an editable SVG master and a reproducible Pillow generator:
+```bash
+python3 -m pip install Pillow
+python3 mobile/tool/generate_app_icon.py
+```
+The script creates the 1024×1024 opaque PNG and updates the Xcode AppIcon asset catalog. Then rebuild the iOS app:
+```bash
+cd mobile
+flutter clean
+flutter pub get
+flutter run
+```
+
+### Connect a physical iPhone to the Mac backend
+- Start the backend on the Mac with `cd backend && ./run.sh`.
+- Find the Mac's current Wi-Fi IPv4 address in macOS System Settings → Wi-Fi → Details.
+- On the iPhone, open FireWatch AI → Settings → Backend Connection and enter `http://MAC-LAN-IP:8000` (replace with the current address).
+- Keep both devices on the same Wi-Fi network. The iOS Simulator uses `http://127.0.0.1:8000`; that loopback address does not point to the Mac when entered on a physical iPhone.
+- The launcher no longer kills arbitrary processes occupying the backend port. If port 8000 is occupied, it reports the conflict and lets you choose another port with `FIREWATCH_PORT=8001 ./run.sh`.
+

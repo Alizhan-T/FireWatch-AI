@@ -11,6 +11,8 @@ import random
 import shutil
 import time
 import uuid
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -29,6 +31,7 @@ from .config import BASE_DIR, Settings, get_settings
 from .db import Database, new_id, now_iso
 from .demo_assets import BUILTIN_DEMO_VIDEOS_META, ensure_demo_image, ensure_demo_videos
 from .detection import build_detector, severity_for
+from .monitoring import ConfirmationTracker
 from .schemas import (AnalyzeVideoFrameRequest, Camera, CameraCreate, CameraWithStatus,
                       DemoVideo,
                       DetectionResult, DeviceIn, Incident, IncidentCreate,
@@ -54,6 +57,7 @@ class SimulateRequest(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    settings.validate()
     settings.media_dir.mkdir(parents=True, exist_ok=True)
     (settings.media_dir / "uploads").mkdir(exist_ok=True)
     (settings.media_dir / "clips").mkdir(exist_ok=True)
@@ -66,6 +70,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     scanner_last_error: str | None = None
     scanner_last_run_at: str | None = None
     scanner_current_camera: str | None = None
+    scanner_metrics = {"attempted": 0, "succeeded": 0, "failed": 0, "confirmed": 0}
+    scanner_results: dict[str, dict] = {}
+    confirmations = ConfirmationTracker(settings.camera_confirmation_frames,
+                                       settings.camera_alert_min_confidence)
+    cameras_lock = threading.RLock()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -98,9 +107,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def api_key_guard(request: Request, call_next):
         expected = settings.api_access_token
-        if expected and request.method != "OPTIONS":
+        is_liveness = request.url.path == "/live" and request.method in ("GET", "HEAD")
+        if expected and request.method != "OPTIONS" and not is_liveness:
             supplied = request.headers.get("x-api-key", "")
-            if not hmac.compare_digest(supplied, expected):
+            if not hmac.compare_digest(supplied.encode(), expected.encode()):
                 return JSONResponse(status_code=401, content={"detail": "API key required or invalid"})
         return await call_next(request)
 
@@ -209,7 +219,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def load_cameras() -> dict[str, dict]:
         try:
-            data = json.loads(settings.cameras_file.read_text("utf-8"))
+            with cameras_lock:
+                data = json.loads(settings.cameras_file.read_text("utf-8"))
             return {c["id"]: Camera(**c).model_dump() for c in data}
         except FileNotFoundError:
             return {}
@@ -219,10 +230,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def save_cameras(cams: dict[str, dict]) -> None:
         settings.cameras_file.parent.mkdir(parents=True, exist_ok=True)
-        settings.cameras_file.write_text(
-            json.dumps(list(cams.values()), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        tmp = settings.cameras_file.with_suffix(".part.json")
+        with cameras_lock:
+            tmp.write_text(json.dumps(list(cams.values()), ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+            tmp.replace(settings.cameras_file)
 
     def to_incident(row: dict) -> dict:
         r = dict(row)
@@ -241,7 +253,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def _send() -> None:
             res = push.send_incident_alert(db.device_tokens(), title, body, data)
             db.delete_devices(res.get("invalid_tokens") or [])
-            log.info("push for %s: %s", incident["id"], res)
+            log.info("push for %s: sent=%s failed=%s", incident["id"], res["sent"], res["failed"])
 
         background.add_task(_send)
 
@@ -351,6 +363,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера"})
 
     # ---------------- system ----------------
+    @app.api_route("/live", methods=["GET", "HEAD"], include_in_schema=False)
+    def live():
+        """Minimal public process probe; detailed diagnostics still require the API key."""
+        return {"status": "alive"}
+
+    @app.get("/ready", tags=["system"])
+    def ready():
+        reasons = []
+        try:
+            if not db.ping():
+                reasons.append("database_unavailable")
+        except Exception:
+            reasons.append("database_unavailable")
+        if detector.mode != "real_model":
+            reasons.append("real_model_unavailable")
+        if not capture.ffmpeg_available():
+            reasons.append("ffmpeg_unavailable")
+        if not scanner_enabled or scanner_task is None or scanner_task.done():
+            reasons.append("monitoring_inactive")
+        cams = load_cameras()
+        if not cams:
+            reasons.append("no_cameras")
+        # Sequential scans can each spend up to 20 seconds capturing a frame.
+        freshness_sec = max(120, len(cams) * 45 + settings.camera_auto_scan_interval_sec * 2)
+        unavailable = []
+        for camera_id in cams:
+            status = db.get_camera_status(camera_id) or {}
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(status["last_frame_at"])).total_seconds()
+            except (KeyError, TypeError, ValueError):
+                age = float("inf")
+            if status.get("status") != "online" or age > freshness_sec:
+                unavailable.append(camera_id)
+        scan_failures = [camera_id for camera_id in cams
+                         if not scanner_results.get(camera_id, {}).get("last_success_at")
+                         or scanner_results.get(camera_id, {}).get("error")]
+        if unavailable:
+            reasons.append("cameras_unavailable_or_stale")
+        if cams and scan_failures:
+            reasons.append("camera_analysis_unavailable")
+        return JSONResponse(status_code=503 if reasons else 200, content={
+            "ready": not reasons, "reasons": reasons, "unavailable_cameras": unavailable,
+            "firebase": push.status(), "monitoring": camera_monitoring_status(),
+        })
+
     @app.get("/health", tags=["system"])
     def health():
         db_ok = False
@@ -371,6 +428,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "camera_auto_scan_last_error": scanner_last_error,
             "camera_auto_scan_last_run_at": scanner_last_run_at,
             "camera_auto_scan_current_camera": scanner_current_camera,
+            "camera_confirmation_frames": settings.camera_confirmation_frames,
+            "camera_alert_min_confidence": settings.camera_alert_min_confidence,
+            "monitoring_metrics": dict(scanner_metrics),
             "cameras_configured": len(load_cameras()),
             "demo_videos_available": len(sync_demo_videos_dir()),
             "devices_registered": len(db.device_tokens()),
@@ -458,23 +518,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Укажите полный URL камеры с поддерживаемой схемой и именем хоста")
         if port is not None and not 1 <= port <= 65535:
             raise HTTPException(422, "Номер порта должен быть от 1 до 65535")
-        cams = load_cameras()
         cam_id = (body.id or new_id("cam")).strip()
-        if cam_id in cams:
-            raise HTTPException(409, f"Камера с id '{cam_id}' уже существует")
         cam = Camera(id=cam_id, name=body.name.strip(), url=url,
                      lat=body.lat, lon=body.lon).model_dump()
-        cams[cam_id] = cam
-        save_cameras(cams)
+        with cameras_lock:
+            cams = load_cameras()
+            if cam_id in cams:
+                raise HTTPException(409, f"Камера с id '{cam_id}' уже существует")
+            cams[cam_id] = cam
+            save_cameras(cams)
         return camera_with_status(cam)
 
     @app.delete("/cameras/{camera_id}", tags=["cameras"])
     def delete_camera(camera_id: str):
-        cams = load_cameras()
-        if camera_id not in cams:
-            raise HTTPException(404, "Камера не найдена")
-        cams.pop(camera_id)
-        save_cameras(cams)
+        with cameras_lock:
+            cams = load_cameras()
+            if camera_id not in cams:
+                raise HTTPException(404, "Камера не найдена")
+            cams.pop(camera_id)
+            save_cameras(cams)
         db.delete_camera_status(camera_id)
         return {"ok": True, "deleted": camera_id, "remaining": len(cams)}
 
@@ -887,6 +949,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         count = db.upsert_device(body.token, body.name, body.platform)
         return {"ok": True, "devices": count, "firebase": push.status()}
 
+    @app.post("/push/test", tags=["push"])
+    def test_push(body: DeviceIn):
+        if not push.is_enabled():
+            raise HTTPException(503, "Firebase не настроен на сервере")
+        if body.token not in db.device_tokens():
+            raise HTTPException(404, "Сначала зарегистрируйте это устройство")
+        result = push.send_incident_alert(
+            [body.token], "FireWatch — проверка уведомлений",
+            "Это тестовое уведомление. Тревоги о пожаре нет.", {"type": "test"},
+        )
+        db.delete_devices(result.pop("invalid_tokens", []))
+        # FCM acceptance is observable; actual iPhone delivery must be confirmed on-device.
+        return result
+
     # ---------------- simulation ----------------
     @app.post("/simulate_fire", tags=["demo"], response_model=Incident, status_code=201)
     async def simulate_fire(background: BackgroundTasks, body: SimulateRequest | None = None):
@@ -973,6 +1049,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "detector_mode": detector.mode,
             "ffmpeg_available": capture.ffmpeg_available(),
             "cameras_configured": len(load_cameras()),
+            "confirmation_frames": settings.camera_confirmation_frames,
+            "min_confidence": settings.camera_alert_min_confidence,
+            "pending_confirmations": confirmations.pending(),
+            "metrics": dict(scanner_metrics),
+            "camera_results": dict(scanner_results),
         }
 
     def start_camera_auto_scan(*, require_cameras: bool) -> None:
@@ -989,6 +1070,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
         scanner_enabled = True
         scanner_last_error = None
+        confirmations.clear()
+        scanner_results.clear()
         scanner_task = asyncio.create_task(camera_auto_scan_loop())
         log.warning("Camera auto-scan started: interval=%ss cameras=%s",
                     settings.camera_auto_scan_interval_sec, len(load_cameras()))
@@ -1005,6 +1088,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 pass
             scanner_task = None
         scanner_current_camera = None
+        confirmations.clear()
         log.info("Camera auto-scan stopped")
 
     async def scan_camera_once(camera_id: str, background: BackgroundTasks) -> None:
@@ -1026,13 +1110,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db.upsert_camera_status(camera_id, status="offline", last_error=str(exc)[:300],
                                     snapshot_path=None)
             raise HTTPException(502, f"Не удалось получить кадр камеры: {exc}")
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             img_path.unlink(missing_ok=True)
             raise
 
-        if out.classification == "none":
+        if not confirmations.observe(camera_id, out.classification, out.confidence):
             img_path.unlink(missing_ok=True)
             return
+        scanner_metrics["confirmed"] += 1
 
         severity = severity_for(out.classification, out.confidence)
         existing = db.find_active_camera_incident(camera_id, out.classification, detector.mode)
@@ -1084,6 +1169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if not scanner_enabled:
                     return
                 scanner_current_camera = cam["name"]
+                scanner_metrics["attempted"] += 1
                 background = BackgroundTasks()
                 try:
                     # Дедупликация выполняется при создании инцидента, поэтому сканируем
@@ -1092,13 +1178,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await background()
                     scanner_last_error = None
                     scanner_last_run_at = now_iso()
+                    scanner_metrics["succeeded"] += 1
+                    scanner_results[cam["id"]] = {"last_success_at": scanner_last_run_at, "error": None}
                 except HTTPException as exc:
+                    confirmations.reset(cam["id"])
+                    scanner_metrics["failed"] += 1
+                    scanner_results[cam["id"]] = {"error": str(exc.detail)[:300]}
                     scanner_last_error = f"{cam['name']}: {exc.detail}"[:500]
                     scanner_last_run_at = now_iso()
                     log.warning("Auto-scan camera %s skipped: %s", cam["id"], exc.detail)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    confirmations.reset(cam["id"])
+                    scanner_metrics["failed"] += 1
+                    scanner_results[cam["id"]] = {"error": type(exc).__name__}
                     scanner_last_error = f"{cam['name']}: {type(exc).__name__}"[:500]
                     scanner_last_run_at = now_iso()
                     log.exception("Auto-scan camera %s failed", cam["id"])

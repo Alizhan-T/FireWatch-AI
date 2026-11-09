@@ -2,6 +2,9 @@
 
 **FireWatch AI** is a full-stack wildfire monitoring, computer vision fire/smoke detection, and incident response Minimum Viable Product (MVP) built for iOS.
 
+The current iPhone app is [FireWatchNative (SwiftUI)](FireWatchNative/README.md).
+See [server deployment and field checks](deploy/README.md) for Docker, HTTPS, API-key protection, push testing and 24-hour monitoring verification. The Flutter instructions below describe the earlier client.
+
 ---
 
 ## 1. Project Overview & Transparency Policy
@@ -155,6 +158,10 @@ flutter build ios --simulator --no-codesign
 ### Scenario 2: Standalone Offline Demo Mode (No Backend Required)
 - If the backend is not running, tap **Switch to Offline Demo Mode** on the Dashboard error card (or toggle **Offline Demo Mode** in **Profile & Settings**).
 - All screens, fire simulation, alert filtering, status updates, and demo detection continue to work using the clearly labeled in-memory `LocalDemoStore`.
+
+### Native iPhone: public camera viewing without a backend
+- The **Cameras** tab can open its bundled public HLS candidates directly on the iPhone, without a FireWatch server.
+- This is video viewing only. Camera checks, YOLO analysis, saved incidents and continuous monitoring require the FastAPI backend. Public feed availability can change, and the listed Aktau cameras are not dedicated forest lookout cameras.
 
 ---
 

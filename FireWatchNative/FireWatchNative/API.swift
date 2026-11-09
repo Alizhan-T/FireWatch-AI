@@ -197,6 +197,13 @@ final class API: ObservableObject {
         return result
     }
 
+    func testPush(token: String) async throws -> PushTestResult {
+        try await registerDevice(token: token)
+        return try await request("/push/test", method: "POST",
+            body: JSONSerialization.data(withJSONObject: ["token": token, "platform": "ios"]),
+            contentType: "application/json", timeout: 120)
+    }
+
     func addCamera(name: String, streamURL: String, lat: Double, lon: Double) async throws -> Camera {
         struct Payload: Encodable { let name: String; let url: String; let lat: Double; let lon: Double }
         let payload = Payload(name: name, url: streamURL, lat: lat, lon: lon)
@@ -208,7 +215,7 @@ final class API: ObservableObject {
     }
 
     func checkCamera(_ camera: Camera) async throws -> Camera {
-        let checked: Camera = try await request("/cameras/\(camera.id)/check", method: "POST")
+        let checked: Camera = try await request("/cameras/\(camera.id)/check", method: "POST", timeout: 90)
         upsertCamera(checked)
         await refresh()
         return cameras.first(where: { $0.id == camera.id }) ?? checked

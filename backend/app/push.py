@@ -55,30 +55,33 @@ def send_incident_alert(tokens: list[str], title: str, body: str, data: dict) ->
 
     from firebase_admin import messaging
 
-    message = messaging.MulticastMessage(
-        tokens=tokens,
-        notification=messaging.Notification(title=title, body=body),
-        data=data,
-        apns=messaging.APNSConfig(
-            headers={"apns-priority": "10", "apns-push-type": "alert"},
-            payload=messaging.APNSPayload(aps=messaging.Aps(sound="default")),
-        ),
-    )
-    try:
-        resp = messaging.send_each_for_multicast(message)
-    except Exception as e:  # noqa: BLE001
-        log.error("FCM send failed: %s", e)
-        return {"enabled": True, "sent": 0, "failed": len(tokens), "errors": [str(e)]}
-    invalid = [
-        tokens[i]
-        for i, r in enumerate(resp.responses)
-        if not r.success and r.exception is not None
-        and type(r.exception).__name__ in ("UnregisteredError", "SenderIdMismatchError")
-    ]
-    return {
-        "enabled": True,
-        "sent": resp.success_count,
-        "failed": resp.failure_count,
-        "errors": [str(r.exception) for r in resp.responses if not r.success],
-        "invalid_tokens": invalid,
-    }
+    result = {"enabled": True, "sent": 0, "failed": 0, "errors": [], "invalid_tokens": []}
+    # FCM accepts no more than 500 registration tokens per multicast request.
+    for offset in range(0, len(tokens), 500):
+        batch = tokens[offset:offset + 500]
+        message = messaging.MulticastMessage(
+            tokens=batch,
+            notification=messaging.Notification(title=title, body=body),
+            data=data,
+            apns=messaging.APNSConfig(
+                headers={"apns-priority": "10", "apns-push-type": "alert"},
+                payload=messaging.APNSPayload(aps=messaging.Aps(sound="default")),
+            ),
+        )
+        try:
+            resp = messaging.send_each_for_multicast(message)
+        except Exception as exc:
+            # Do not expose device tokens or credential details in SDK error messages.
+            log.error("FCM batch failed: %s", type(exc).__name__)
+            result["failed"] += len(batch)
+            result["errors"].append(type(exc).__name__)
+            continue
+        result["sent"] += resp.success_count
+        result["failed"] += resp.failure_count
+        for token, response in zip(batch, resp.responses):
+            if not response.success:
+                error = type(response.exception).__name__
+                result["errors"].append(error)
+                if error in ("UnregisteredError", "SenderIdMismatchError"):
+                    result["invalid_tokens"].append(token)
+    return result

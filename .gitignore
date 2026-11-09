@@ -1,6 +1,11 @@
 # Python
 backend/.venv/
 backend/.env
+.env.production
+secrets/
+backend/reports/
+FireWatchNative/*.xcodeproj/
+FireWatchNative/FireWatchNative.entitlements
 backend/data/
 backend/media/
 backend/static/clips/

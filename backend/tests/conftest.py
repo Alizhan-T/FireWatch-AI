@@ -18,6 +18,7 @@ def make_settings(tmp: Path, detector: str = "heuristic") -> Settings:
     s.database_path = tmp / "test.db"
     s.media_dir = tmp / "media"
     s.demo_assets_dir = tmp / "demo_assets"
+    s.cameras_file = tmp / "cameras.json"
     s.detector = detector
     s.firebase_credentials = ""
     return s

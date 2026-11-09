@@ -1,7 +1,9 @@
 name: Native iOS build
 on:
   push:
-    branches: [feature/native-ios-swiftui]
+    paths:
+      - 'FireWatchNative/**'
+      - '.github/workflows/native-ios.yml'
   pull_request:
     paths:
       - 'FireWatchNative/**'
@@ -12,6 +14,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen

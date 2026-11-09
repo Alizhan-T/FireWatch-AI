@@ -229,7 +229,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     controller: _urlCtrl,
                     keyboardType: TextInputType.url,
                     autocorrect: false,
-                    placeholder: 'http://192.168.1.101:8000',
+                    placeholder: 'http://<MAC-LAN-IP>:8000',
                     padding: const EdgeInsets.all(13),
                     style: const TextStyle(
                       color: AppColors.textPrimary,

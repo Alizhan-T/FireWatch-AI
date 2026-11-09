@@ -1,94 +1,126 @@
 #!/usr/bin/env bash
-# Запуск локального демонстрационного бэкенда FireWatch AI (Mac + iPhone по Wi-Fi)
-set -euo pipefail
+# Safe local launcher for FireWatch AI (Mac backend + iPhone over Wi-Fi).
+set -Eeuo pipefail
 cd "$(dirname "$0")"
 
+APP_NAME="FireWatch AI"
+PORT="${FIREWATCH_PORT:-${PORT:-8000}}"
+HOST="${HOST:-0.0.0.0}"
+VENV_PY=".venv/bin/python"
+UVICORN=".venv/bin/uvicorn"
+
 echo "========================================================"
-echo "  FireWatch AI — Local Demonstration Backend (No VPS)"
+echo "  ${APP_NAME} — Local Backend"
 echo "========================================================"
 
-# 1. Проверка Python и виртуального окружения
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "❌ Ошибка: python3 не найден в PATH. Установите Python 3.10+ (brew install python)."
+  echo "ERROR: python3 not found. Install Python 3.10+."
   exit 1
 fi
 
 if [ ! -d .venv ]; then
-  echo "⚙️  Создание виртуального окружения .venv..."
+  echo "Creating Python virtual environment..."
   python3 -m venv .venv
-  .venv/bin/pip install --upgrade pip
-  .venv/bin/pip install -r requirements.txt
 fi
 
-# 2. Проверка обязательных Python-пакетов
-if ! .venv/bin/python -c "import fastapi, uvicorn, PIL, pydantic_settings" >/dev/null 2>&1; then
-  echo "⚙️  Установка недостающих зависимостей из requirements.txt..."
-  .venv/bin/pip install -r requirements.txt
+if ! "${VENV_PY}" -c "import fastapi, uvicorn, PIL, pydantic_settings" >/dev/null 2>&1; then
+  echo "Installing backend dependencies..."
+  "${VENV_PY}" -m pip install --upgrade pip
+  "${VENV_PY}" -m pip install -r requirements.txt
 fi
 
-# 3. Проверка конфигурации .env
-[ -f .env ] || cp .env.example .env
+if [ ! -f .env ]; then
+  if [ -f .env.example ]; then
+    cp .env.example .env
+    echo "Created .env from .env.example. Review settings before use."
+  else
+    echo "ERROR: .env and .env.example are both missing."
+    exit 1
+  fi
+fi
 
-# 4. Проверка FFmpeg и ffprobe
-if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
-  FFMPEG_VER=$(ffmpeg -version | head -n 1 | awk '{print $3}')
-  echo "✅ FFmpeg & ffprobe доступны (версия: ${FFMPEG_VER})"
+if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+  echo "WARNING: FFmpeg/ffprobe not found. Video processing will be unavailable."
 else
-  echo "⚠️  FFmpeg/ffprobe не найдены в PATH. Установите через: brew install ffmpeg"
+  echo "FFmpeg: $(ffmpeg -version | head -n 1)"
 fi
 
-# 5. Проверка модели YOLOv8n
 if [ -f models/fire_smoke_yolov8n.pt ]; then
-  echo "✅ Модель YOLOv8n найдена: models/fire_smoke_yolov8n.pt (REAL MODEL INFERENCE)"
+  echo "YOLO weights: found"
 else
-  echo "⚠️  Нет весов models/fire_smoke_yolov8n.pt — детекция будет в DEMO-режиме. Скачать: ./download_model.sh"
+  echo "WARNING: YOLO weights missing. Detector behavior depends on DETECTOR setting."
 fi
 
-# 6. Определение текущего локального Wi-Fi IP Mac
-LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1")
-PORT="${FIREWATCH_PORT:-8000}"
-
-# 7. Проверка занятости порта 8000 и очистка зависших процессов
-EXISTING_PIDS=$(lsof -ti tcp:"${PORT}" 2>/dev/null || true)
-if [ -n "${EXISTING_PIDS}" ]; then
-  echo "🔄 Порт ${PORT} занят (PID: ${EXISTING_PIDS}). Завершаем предыдущий экземпляр..."
-  kill ${EXISTING_PIDS} 2>/dev/null || true
-  sleep 1
+# Never terminate an arbitrary process just because it owns the configured port.
+if command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS="$(lsof -tiTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -n "${EXISTING_PIDS}" ]; then
+    if curl --silent --show-error --fail --max-time 2 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+      echo "A service already responds on port ${PORT}."
+      echo "If this is FireWatch AI, reuse it. Otherwise choose another port:"
+      echo "  FIREWATCH_PORT=8001 ./run.sh"
+      exit 0
+    fi
+    echo "ERROR: port ${PORT} is occupied by another process (PID: ${EXISTING_PIDS})."
+    echo "The process was NOT terminated. Stop it yourself or choose another port."
+    echo "  FIREWATCH_PORT=8001 ./run.sh"
+    exit 1
+  fi
 fi
 
-echo "--------------------------------------------------------"
-echo "  Mac Local URL   : http://127.0.0.1:${PORT}"
-echo "  iPhone Wi-Fi URL: http://${LAN_IP}:${PORT}"
-echo "  Health Check    : http://${LAN_IP}:${PORT}/health"
-echo "  Swagger API Docs: http://${LAN_IP}:${PORT}/docs"
+LAN_IP=""
+if command -v ipconfig >/dev/null 2>&1; then
+  LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || true)"
+  if [ -z "${LAN_IP}" ]; then
+    LAN_IP="$(ipconfig getifaddr en1 2>/dev/null || true)"
+  fi
+fi
+if [ -z "${LAN_IP}" ] && command -v hostname >/dev/null 2>&1; then
+  LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+fi
+
+echo "Mac URL:      http://127.0.0.1:${PORT}"
+if [ -n "${LAN_IP}" ] && [ "${LAN_IP}" != "127.0.0.1" ]; then
+  echo "iPhone URL:   http://${LAN_IP}:${PORT}"
+else
+  echo "iPhone URL:   LAN address not detected. Check System Settings → Wi-Fi."
+fi
+echo "Health:       http://127.0.0.1:${PORT}/health"
+echo "API docs:     http://127.0.0.1:${PORT}/docs"
 echo "--------------------------------------------------------"
 
 UVICORN_PID=""
 cleanup() {
   if [ -n "${UVICORN_PID}" ] && kill -0 "${UVICORN_PID}" 2>/dev/null; then
-    echo ""
-    echo "🛑 Остановка FireWatch AI Backend (PID ${UVICORN_PID})..."
-    kill "${UVICORN_PID}" 2>/dev/null || true
+    echo
+    echo "Stopping FireWatch AI backend (PID ${UVICORN_PID})..."
+    kill -TERM "${UVICORN_PID}" 2>/dev/null || true
     wait "${UVICORN_PID}" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT INT TERM
 
-# 8. Запуск FastAPI на 0.0.0.0:8000 и проверка /health
-.venv/bin/uvicorn main:app --host 0.0.0.0 --port "${PORT}" &
+"${UVICORN}" main:app --host "${HOST}" --port "${PORT}" &
 UVICORN_PID=$!
 
-for i in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-    echo "✅ Backend готов к работе и отвечает на http://${LAN_IP}:${PORT}/health"
+READY=0
+for _ in $(seq 1 40); do
+  if curl --silent --fail --max-time 1 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    READY=1
     break
   fi
   if ! kill -0 "${UVICORN_PID}" 2>/dev/null; then
-    echo "❌ Процесс Uvicorn завершился с ошибкой при старте."
-    wait "${UVICORN_PID}"
+    echo "ERROR: Uvicorn exited before becoming healthy."
+    wait "${UVICORN_PID}" || true
     exit 1
   fi
   sleep 0.5
 done
 
+if [ "${READY}" -ne 1 ]; then
+  echo "ERROR: backend did not become healthy within 20 seconds."
+  exit 1
+fi
+
+echo "Backend is healthy and listening on ${HOST}:${PORT}."
 wait "${UVICORN_PID}"

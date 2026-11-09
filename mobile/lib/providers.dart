@@ -5,15 +5,13 @@ import 'models/incident.dart';
 import 'services/api_service.dart';
 import 'services/push_service.dart';
 
-const defaultMacLanBackendUrl = 'http://192.168.1.101:8000';
-const secondaryMacLanBackendUrl = 'http://10.204.57.18:8000';
+// Simulator loopback is deterministic. A physical iPhone must use the Mac's
+// current LAN address, entered in Settings; LAN IPs can change between networks.
 const defaultSimulatorBackendUrl = 'http://127.0.0.1:8000';
+const defaultMacLanBackendUrl = defaultSimulatorBackendUrl;
+const secondaryMacLanBackendUrl = defaultSimulatorBackendUrl;
 
-const List<String> candidateBackendUrls = [
-  defaultMacLanBackendUrl,
-  secondaryMacLanBackendUrl,
-  defaultSimulatorBackendUrl,
-];
+const List<String> candidateBackendUrls = [defaultSimulatorBackendUrl];
 
 bool isLoopbackUrl(String url) {
   final u = url.toLowerCase();
@@ -41,10 +39,14 @@ class ServerUrlNotifier extends Notifier<String> {
     if (saved == null || saved.isEmpty) {
       return defaultMacLanBackendUrl;
     }
-    // Automatically migrate stale IP from previous subnet (10.2.68.203) or loopback
-    if (saved.contains('10.2.68.203') || isLoopbackUrl(saved)) {
-      prefs.setString(_kServerUrl, defaultMacLanBackendUrl);
-      return defaultMacLanBackendUrl;
+    // Migrate old hard-coded development addresses to the simulator default.
+    // A physical iPhone should be configured with the Mac's current LAN IP in Settings.
+    final isLegacyHardcodedAddress = saved.contains('192.168.1.101') ||
+        saved.contains('10.204.57.18') ||
+        saved.contains('10.2.68.203');
+    if (isLegacyHardcodedAddress) {
+      prefs.setString(_kServerUrl, defaultSimulatorBackendUrl);
+      return defaultSimulatorBackendUrl;
     }
     return saved;
   }

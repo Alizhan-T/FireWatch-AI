@@ -1,5 +1,33 @@
 # FireWatch Native — SwiftUI-only iOS client
 
+## November 2026: Cities, local events, icon, and Core ML
+
+**City-only forms.** In AI photo analysis and when registering a camera with the optional backend, choose a Kazakhstan city instead of latitude and longitude. Coordinates are assigned from the city centroid **only for rough display**. A centroid is NOT the actual location of a fire.
+
+**Events.** The Events tab now works offline. Use «Создать событие» for a user-entered, unverified observation; use «Имитация» for a clearly labelled DEMO event. Both are stored locally on the phone. You can mark them resolved, delete them, and see them on the dashboard and map. Manual/DEMO events are not real AI detections, emergency dispatches or APNs pushes.
+
+**Cameras.** Seven previously audited Aktau HLS streams are kept. The city filter now adds a Semey Central Square publisher view and Shymbulak/Almaty publisher view INSIDE FireWatch; neither is a verified direct HLS. The Semey source is classified as unstable by its public listing. Web publishers may restrict embedding. The app does not bypass those restrictions or present an unavailable video as LIVE. You may save a direct permitted HLS URL yourself.
+
+**Icon.** Native XcodeGen builds generate a minimal orange fire/shield AppIcon using the macOS Swift/AppKit script at tools/generate_app_icon.swift. No external graphics package is required.
+
+**Real AI on iPhone.** The Core ML/Vision photo-inference path is now present, but cannot run until a trained, compatible Core ML model is generated and bundled. The PyTorch checkpoint cannot run in iOS on its own. An optional server with the existing YOLO model is still the only immediately available real-model inference if the Core ML artifact has not been installed.
+
+To prepare the model on a developer Mac (optional):
+
+    cd FireWatch-AI
+    python3 -m pip install ultralytics coremltools
+    python3 backend/tools/export_coreml.py
+    cd FireWatchNative
+    xcodegen generate
+    open FireWatchNative.xcodeproj
+
+The exporter validates that the expected classes are fire and smoke and selects NMS for Vision. The iPhone displays detections only for a compatible object-detection output and confidence >=65%. Conversion and a confidence threshold alone DO NOT make wildfire detection trustworthy. Field testing needs many varied labelled fire and non-fire images, careful false-positive/negative evaluation and a real iPhone. iOS cannot promise unlimited 24/7 background camera scanning.
+
+**Personal Team** signing remains available without the paid APNs capability by default.
+
+---
+
+
 ## First launch: server-free camera viewing
 
 This native SwiftUI application (iOS 17+) is the sole supported iPhone client. **A FireWatch backend is optional.** Generate the Xcode project with XcodeGen, open the app, and go to **Камеры** to watch the built-in public HLS camera candidates directly through AVPlayer. You may add personal HTTP(S) .m3u8 streams under **Мои HLS-камеры · без сервера**; they persist in UserDefaults on the iPhone. The map displays published camera coordinates even when no backend is configured.

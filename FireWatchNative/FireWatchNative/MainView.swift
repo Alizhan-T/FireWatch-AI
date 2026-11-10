@@ -18,11 +18,33 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }.tag(0)
-            map.tabItem { Label("Карта", systemImage: "map.fill") }.tag(1)
-            EventCenterView(api: api, store: localEvents).tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
-            CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }.tag(3)
-            DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
+            dashboard
+                .tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }.tag(0)
+            // Instantiate MapKit, AVPlayer and photo analysis only when selected.
+            // Keeping all five heavyweight screens alive at launch can increase
+            // memory pressure on a physical iPhone.
+            Group {
+                if selectedTab == 1 { map } else { Color.clear }
+            }
+            .tabItem { Label("Карта", systemImage: "map.fill") }.tag(1)
+            Group {
+                if selectedTab == 2 {
+                    EventCenterView(api: api, store: localEvents)
+                } else { Color.clear }
+            }
+            .tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
+            Group {
+                if selectedTab == 3 {
+                    CameraLibraryView(api: api)
+                } else { Color.clear }
+            }
+            .tabItem { Label("Камеры", systemImage: "video.fill") }.tag(3)
+            Group {
+                if selectedTab == 4 {
+                    DetectionView(api: api)
+                } else { Color.clear }
+            }
+            .tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
         .tint(Palette.accent)
         .task(id: scenePhase) {

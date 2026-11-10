@@ -15,6 +15,7 @@ struct MainView: View {
     @State private var pushTestMessage: String?
     @State private var selectedTab = 0
     @State private var pushIncident: Incident?
+    @State private var selectedPublicCamera: CameraCandidate?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -202,11 +203,20 @@ struct MainView: View {
                            coordinate: CLLocationCoordinate2D(latitude: camera.lat, longitude: camera.lon))
                         .tint(.blue)
                 }
-                // Public catalogue pins remain visible without the optional backend.
+                // Every Kazakhstan public camera pin opens its video inside FireWatch.
                 ForEach(PublicCameraCatalog.candidates) { candidate in
-                    Marker(candidate.name, systemImage: "video",
-                           coordinate: CLLocationCoordinate2D(latitude: candidate.lat, longitude: candidate.lon))
-                        .tint(.teal)
+                    Annotation(candidate.name,
+                               coordinate: CLLocationCoordinate2D(latitude: candidate.lat, longitude: candidate.lon)) {
+                        Button {
+                            selectedPublicCamera = candidate
+                        } label: {
+                            Image(systemName: "video.fill")
+                                .foregroundStyle(.white)
+                                .padding(9)
+                                .background(.teal, in: Circle())
+                        }
+                        .accessibilityLabel("Смотреть \(candidate.name)")
+                    }
                 }
             }
             .mapStyle(.standard(elevation: .realistic))
@@ -218,6 +228,11 @@ struct MainView: View {
                     .background(.regularMaterial)
             }
             .navigationTitle("Карта")
+            .sheet(item: $selectedPublicCamera) { candidate in
+                NavigationStack {
+                    PublicCameraDetailView(candidate: candidate)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await api.refresh() } } label: { Image(systemName: "arrow.clockwise") }

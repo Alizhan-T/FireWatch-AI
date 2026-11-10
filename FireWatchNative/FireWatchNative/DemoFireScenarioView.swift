@@ -202,13 +202,15 @@ struct DemoFireScenarioView: View {
                                 }
                             }
                             .overlay(alignment: .topLeading) {
-                                Text("DEMO · ИСКУССТВЕННЫЙ ПОЖАР")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.white)
-                                    .padding(8)
-                                    .background(.red.opacity(0.95), in: Capsule())
-                                    .padding(10)
-                                    .allowsHitTesting(false)
+                                if canRenderTrainingEffects {
+                                    Text("DEMO · ВИЗУАЛЬНАЯ ИМИТАЦИЯ")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(.red.opacity(0.95), in: Capsule())
+                                        .padding(10)
+                                        .allowsHitTesting(false)
+                                }
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
 

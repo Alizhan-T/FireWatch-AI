@@ -37,7 +37,9 @@ private struct TrainingCameraOption: Identifiable {
     let id: String
     let title: String
     let city: String
-    let streamURL: URL
+    let cityID: String
+    let streamURL: URL?
+    let youtubeID: String?
 }
 
 struct DemoFireScenarioView: View {
@@ -64,8 +66,10 @@ struct DemoFireScenarioView: View {
             return TrainingCameraOption(
                 id: "public.\(candidate.id)",
                 title: candidate.name,
-                city: "Актау",
-                streamURL: url
+                city: candidate.id.hasPrefix("almaty-") ? "Алматы" : "Актау",
+                cityID: candidate.id.hasPrefix("almaty-") ? "almaty" : "aktau",
+                streamURL: url,
+                youtubeID: nil
             )
         }
         let personal = savedCameras.cameras.compactMap { camera -> TrainingCameraOption? in
@@ -74,10 +78,23 @@ struct DemoFireScenarioView: View {
                 id: "personal.\(camera.id.uuidString)",
                 title: camera.name,
                 city: "Пользовательский источник",
-                streamURL: url
+                cityID: "personal",
+                streamURL: url,
+                youtubeID: nil
             )
         }
-        return publicOptions + personal
+        let publishedVideo = KazakhstanPublisherCameras.candidates.compactMap { camera -> TrainingCameraOption? in
+            guard let videoID = camera.youtubeVideoID else { return nil }
+            return TrainingCameraOption(
+                id: "publisher.\(camera.id)",
+                title: camera.name,
+                city: camera.city.name,
+                cityID: camera.cityID,
+                streamURL: nil,
+                youtubeID: videoID
+            )
+        }
+        return publicOptions + publishedVideo + personal
     }
 
     private var selectedCamera: TrainingCameraOption? {
@@ -129,8 +146,14 @@ struct DemoFireScenarioView: View {
                         .pickerStyle(.menu)
                         if let camera = selectedCamera {
                             ZStack(alignment: .topLeading) {
-                                DirectHLSPlayer(url: camera.streamURL)
-                                    .id(camera.id)
+                                if let url = camera.streamURL {
+                                    DirectHLSPlayer(url: url)
+                                        .id(camera.id)
+                                } else if let videoID = camera.youtubeID {
+                                    EmbeddedYouTubePlayer(videoID: videoID)
+                                        .frame(height: 275)
+                                        .id(camera.id)
+                                }
                                 VStack {
                                     Text("DEMO · ОГОНЬ НАРИСОВАН")
                                         .font(.caption2.bold())
@@ -206,7 +229,11 @@ struct DemoFireScenarioView: View {
         .navigationTitle("Учебный пожар")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if chosenID.isEmpty { chosenID = cameras.first?.id ?? "" }
+            if chosenID.isEmpty {
+                chosenID = cameras.first(where: { $0.cityID == event.cityID })?.id ??
+                           cameras.first(where: { $0.cityID == "aktau" })?.id ??
+                           cameras.first?.id ?? ""
+            }
             guard notifyAtStart, !didRequestNotification else { return }
             didRequestNotification = true
             notificationStatus = await DemoSOSNotifications.schedule(for: event)

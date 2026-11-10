@@ -124,3 +124,37 @@ struct DemoTrainingBackdrop: View {
         .accessibilityLabel("Учебный фон, не изображение реальной камеры")
     }
 }
+
+
+/// Dedicated synthetic preview for publisher pages whose camera frames
+/// are unavailable to FireWatch. Never overlays the real publisher webpage.
+struct DemoTrainingStage: View {
+    var body: some View {
+        DemoTrainingBackdrop()
+            .frame(maxWidth: .infinity)
+            .frame(height: 250)
+            .overlay {
+                GeometryReader { geometry in
+                    RealisticFireOverlay()
+                        .scaleEffect(0.65)
+                        .position(x: geometry.size.width * 0.6,
+                                  y: geometry.size.height - 15 - 117 * 0.65)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                DemoScannerOverlay()
+            }
+            .overlay(alignment: .topLeading) {
+                Text("DEMO • ОГОНЬ И ДЫМ")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .padding(7)
+                    .background(.red.opacity(0.9), in: Capsule())
+                    .padding(10)
+            }
+            .frame(height: 250)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .accessibilityLabel("Учебная симуляция огня, дыма и зелёной линии, не кадры реальной камеры")
+    }
+}

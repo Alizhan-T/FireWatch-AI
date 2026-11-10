@@ -6,10 +6,10 @@ struct CameraLibraryView: View {
     @State private var showingAdd = false
     @State private var showingLocalAdd = false
     @StateObject private var localStore = LocalHLSCameraStore()
-    @State private var candidates: [CameraCandidate] = []
+    @State private var candidates: [CameraCandidate] = PublicCameraCatalog.candidates
     @State private var candidateLoading = false
     @State private var candidateError: String?
-    @State private var usingBundledCatalogue = false
+    @State private var usingBundledCatalogue = true
     @State private var candidateProgressID: String?
     @State private var candidateResults: [String: String] = [:]
 
@@ -17,7 +17,7 @@ struct CameraLibraryView: View {
         candidateLoading = true
         defer { candidateLoading = false }
 
-        guard !api.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard api.isConnected else {
             candidates = PublicCameraCatalog.candidates
             usingBundledCatalogue = true
             candidateError = nil
@@ -92,7 +92,7 @@ struct CameraLibraryView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Открытые камеры Казахстана") {
-                    Text("Это кандидаты из публичного каталога Актау, а не подтверждённые рабочие потоки. При добавлении FireWatch сразу проверит URL через FFmpeg. Это городские и прибрежные камеры, не специализированные лесные посты.")
+                    Text("Городские и прибрежные HLS-камеры Актау: работоспособность ссылок не гарантируется. Видео доступно для прямого просмотра; AI-проверка через FFmpeg — только с подключённым сервером.")
                         .font(.footnote).foregroundStyle(.secondary)
                     if usingBundledCatalogue {
                         Label("Встроенный список: видео можно открыть без сервера FireWatch.", systemImage: "wifi.slash")
@@ -319,7 +319,6 @@ private struct CameraDetailView: View {
     @State private var checking = false
     @State private var analyzing = false
     @State private var error: String?
-    @State private var player: AVPlayer?
     @State private var analysis: DetectionSummary?
     @Environment(\.dismiss) private var dismiss
 
@@ -336,12 +335,8 @@ private struct CameraDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if isHLS, let player {
-                    VideoPlayer(player: player)
-                        .frame(height: 230)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                    Text("Прямой HLS-поток оператора. Доступность и задержка зависят от источника.")
-                        .font(.caption).foregroundStyle(.secondary)
+                if isHLS, let url = URL(string: currentCamera.url) {
+                    DirectHLSPlayer(url: url)
                 } else {
                     ContentUnavailableView("Встроенное видео недоступно", systemImage: "video.slash",
                         description: Text("RTSP можно проверить и анализировать на сервере. Для просмотра на iPhone нужен HLS-поток."))
@@ -440,16 +435,5 @@ private struct CameraDetailView: View {
             .padding()
         }
         .navigationTitle(camera.name)
-        .onAppear {
-            if isHLS, let url = URL(string: currentCamera.url) {
-                let streamPlayer = AVPlayer(url: url)
-                player = streamPlayer
-                streamPlayer.play()
-            }
-        }
-        .onDisappear {
-            player?.pause()
-            player = nil
-        }
     }
 }

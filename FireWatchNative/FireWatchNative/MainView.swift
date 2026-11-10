@@ -8,6 +8,7 @@ private enum Palette {
 struct MainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var api = API()
+    @StateObject private var localEvents = LocalEventStore()
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
     @State private var monitoringBusy = false
@@ -21,7 +22,7 @@ struct MainView: View {
         TabView(selection: $selectedTab) {
             dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }.tag(0)
             map.tabItem { Label("Карта", systemImage: "map.fill") }.tag(1)
-            incidents.tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
+            EventCenterView(api: api, store: localEvents).tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
             CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }.tag(3)
             DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
@@ -148,10 +149,18 @@ struct MainView: View {
                     HStack {
                         Text("Последние события").font(.headline)
                         Spacer()
-                        Button("Обновить") { Task { await api.refresh() } }
+                        Button("Все события") { selectedTab = 2 }
                             .font(.caption.bold())
                     }
-                    if api.incidents.isEmpty {
+                    ForEach(localEvents.events.prefix(3)) { event in
+                        NavigationLink {
+                            LocalEventDetailView(store: localEvents, event: event)
+                        } label: {
+                            LocalEventCard(event: event)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if api.incidents.isEmpty && localEvents.events.isEmpty {
                         ContentUnavailableView("Нет событий", systemImage: "checkmark.shield",
                             description: Text(api.isConnected ? "Активных событий пока нет." : "Подключите сервер в настройках."))
                             .frame(minHeight: 150)
@@ -196,6 +205,14 @@ struct MainView: View {
                         Image(systemName: "flame.fill")
                             .foregroundStyle(.white).padding(9)
                             .background(incident.severity == "critical" ? Color.red : Palette.accent, in: Circle())
+                    }
+                }
+                ForEach(localEvents.events.filter { !$0.resolved }) { event in
+                    Annotation(event.title,
+                               coordinate: CLLocationCoordinate2D(latitude: event.city.lat, longitude: event.city.lon)) {
+                        Image(systemName: event.isSimulation ? "play.square.fill" : "flame.fill")
+                            .foregroundStyle(.white).padding(8)
+                            .background(event.isSimulation ? Color.orange : Color.red, in: Circle())
                     }
                 }
                 ForEach(api.cameras) { camera in

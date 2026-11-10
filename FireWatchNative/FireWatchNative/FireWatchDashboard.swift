@@ -18,6 +18,24 @@ struct FireWatchDashboard: View {
     @State private var showSimulation = false
     @State private var showManualEvent = false
 
+    private var aiReady: Bool {
+        OnDeviceFireDetector.isInstalled ||
+        (api.isConnected && api.health?.detector?.mode == "real_model")
+    }
+
+    private var aiStatusText: String {
+        if OnDeviceFireDetector.isInstalled {
+            return "Core ML установлена · анализ фото на iPhone доступен"
+        }
+        if api.isConnected && api.health?.detector?.mode == "real_model" {
+            return "YOLO-сервер подключён · анализ изображений доступен"
+        }
+        if api.isConnected {
+            return "AI-сервер подключён, но настоящая модель не активна (DEMO)"
+        }
+        return "Камеры доступны без сервера · AI требует Core ML или YOLO"
+    }
+
     private var activeEvents: [LocalFireEvent] {
         events.events.filter { !$0.resolved }
     }
@@ -162,9 +180,9 @@ struct FireWatchDashboard: View {
                 )
             }
             HStack(spacing: 7) {
-                Image(systemName: api.isConnected ? "checkmark.circle.fill" : "iphone.gen3")
-                    .foregroundStyle(api.isConnected ? .green : .secondary)
-                Text(api.isConnected ? "Дополнительный AI-сервер подключён" : "Режим iPhone · сервер не требуется")
+                Image(systemName: aiReady ? "checkmark.circle.fill" : "exclamationmark.triangle")
+                    .foregroundStyle(aiReady ? .green : .orange)
+                Text(aiStatusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

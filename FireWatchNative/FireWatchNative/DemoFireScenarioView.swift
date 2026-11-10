@@ -1,38 +1,5 @@
 import SwiftUI
 
-/// An unmistakably artificial training overlay; it is never a real AI detection.
-private struct SyntheticFireOverlay: View {
-    @State private var flickering = false
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ForEach(0..<3, id: \.self) { index in
-                Image(systemName: "cloud.fill")
-                    .font(.system(size: CGFloat(31 + index * 10), weight: .light))
-                    .foregroundStyle(.gray.opacity(flickering ? 0.32 : 0.20))
-                    .offset(
-                        x: CGFloat(-17 - index * 12),
-                        y: CGFloat(-65 - index * 27) - (flickering ? -8 : 4)
-                    )
-            }
-            ForEach(0..<3, id: \.self) { index in
-                Image(systemName: "flame.fill")
-                    .font(.system(size: CGFloat(58 + index * 19), weight: .black))
-                    .foregroundStyle(index == 1 ? .yellow : .orange)
-                    .shadow(color: .red.opacity(0.75), radius: 13)
-                    .scaleEffect(flickering ? 1.12 : 0.89)
-                    .offset(x: CGFloat(-16 - index * 18),
-                            y: CGFloat(-10 - index * 6))
-            }
-        }
-        .frame(width: 170, height: 190)
-        .allowsHitTesting(false)
-        .animation(.easeInOut(duration: 0.58).repeatForever(autoreverses: true), value: flickering)
-        .onAppear { flickering = true }
-        .accessibilityLabel("Искусственный визуальный эффект огня, только DEMO")
-    }
-}
-
 private struct TrainingCameraOption: Identifiable {
     let id: String
     let title: String
@@ -155,7 +122,7 @@ struct DemoFireScenarioView: View {
                                         .id(camera.id)
                                 }
                                 VStack {
-                                    Text("DEMO · ОГОНЬ НАРИСОВАН")
+                                    Text("DEMO · ВИЗУАЛЬНАЯ СИМУЛЯЦИЯ")
                                         .font(.caption2.bold())
                                         .foregroundStyle(.white)
                                         .padding(8)
@@ -170,10 +137,10 @@ struct DemoFireScenarioView: View {
                                         Spacer()
                                         HStack {
                                             Spacer()
-                                            SyntheticFireOverlay()
+                                            RealisticFireOverlay()
                                         }
                                     }
-                                    .padding(.bottom, 70)
+                                    .padding(.bottom, 14)
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -185,10 +152,10 @@ struct DemoFireScenarioView: View {
                         }
                     }
 
-                    Toggle("Показать искусственный эффект огня", isOn: $showFireEffect)
+                    Toggle("Огонь и дым поверх камеры (VFX)", isOn: $showFireEffect)
                         .tint(.orange)
 
-                    Text("Если прямой HLS-поток недоступен, приложение честно покажет ошибку плеера. Эффект не изменяет исходное видео, не создаёт записи и не означает реального пожара.")
+                    Text("Если прямой HLS-поток недоступен, приложение честно покажет ошибку плеера. Анимация огня, дыма и отсветов создана программно. Она не изменяет исходное видео, не создаёт записи и не означает реального пожара.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

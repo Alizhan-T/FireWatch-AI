@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_DIR="${ROOT}/.venv-coreml"
 WEIGHTS="${ROOT}/backend/models/fire_smoke_yolov8n.pt"
 MODEL="${ROOT}/FireWatchNative/FireWatchNative/Models/fire_smoke_yolov8n.mlpackage"
+LABELS="${ROOT}/FireWatchNative/FireWatchNative/Models/fire_smoke_yolov8n_labels.json"
 
 if [[ ! -f "${WEIGHTS}" ]]; then
   echo "Missing trained YOLO weights: ${WEIGHTS}"
@@ -41,7 +42,7 @@ python -m pip install 'ultralytics>=8.3,<9' 'coremltools>=8,<10'
 echo "3/4 · Exporting trained YOLO model into Core ML"
 python "${ROOT}/backend/tools/export_coreml.py"
 
-if [[ ! -d "${MODEL}" ]] || [[ ! -f "${MODEL}/Manifest.json" ]]; then
+if [[ ! -d "${MODEL}" ]] || [[ ! -f "${MODEL}/Manifest.json" ]] || [[ ! -s "${LABELS}" ]]; then
   echo "Core ML package was not generated correctly: ${MODEL}"
   exit 1
 fi

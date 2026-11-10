@@ -54,6 +54,14 @@ Physical-device verification is still required for stream decoding, permissions 
 - Core ML now respects image orientation and requires explicit class names "fire"/"smoke", rather than guessing what numeric class IDs 0/1 mean. Models with ambiguous labels fail clearly rather than swapping fire and smoke.
 - No real fire detection is implied by a DEMO overlay or by a single image. Public camera feeds remain subject to operator permissions. Local test SOS does not notify emergency responders.
 
+## Astana playback and reliability update (11 November 2026)
+
+- The Astana publisher catalogue now prioritizes the **Atameken Business “Astana City View 24/7”** YouTube programme published on 24 February 2026 (source: https://www.youtube.com/watch?v=sR4YuJ-6UO4). The January 2026 publisher programme remains a fallback, and the Khan Shatyr publisher page remains an explicitly unverified alternative. YouTube may have ended either stream or prohibited embedding; **neither is a verified direct HLS feed**.
+- The iPhone offers two separate ways to view a publisher's content inside FireWatch: a standard YouTube embed and a tapped in-app Safari publisher browser. It reports web loading failures; a loaded page is not proof of live decoded frames. No DRM bypass or media extraction.
+- Add your own permitted HLS stream under **Cameras → Connect my HLS camera** and choose **Astana** as the actual city. The DEMO scenario will prefer a city-matched personal HLS feed before public publisher alternatives. Previously saved personal links without a city remain supported.
+- The AVPlayer live stream controller now watches media playback time to notice a frozen stream when AVPlayer still reports “playing”. Reconnects remain bounded and can fail if the source is actually offline; network diagnostics and the retry button remain available.
+- The app still cannot guarantee that public Astana feeds work continuously, nor can it do unattended AI inference on publisher YouTube streams without source permission and a separately tested capture/inference pipeline.
+
 ## What requires the optional backend?
 
 The existing backend/ directory is retained because real YOLOv8n fire/smoke inference currently runs there, not on the iPhone. Running FireWatch without a backend **does not provide automatic fire detection, incident persistence, stream scanning or remote push alerts**.

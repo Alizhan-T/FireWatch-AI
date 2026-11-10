@@ -1,6 +1,8 @@
 name: Native iOS build
 on:
   push:
+    branches:
+      - main
     paths:
       - 'FireWatchNative/**'
       - '.github/workflows/native-ios.yml'

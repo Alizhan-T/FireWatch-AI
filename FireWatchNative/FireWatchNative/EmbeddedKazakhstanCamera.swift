@@ -32,8 +32,14 @@ struct EmbeddedYouTubePlayer: UIViewRepresentable {
         // video IDs may fail on iOS, so the detail screen provides a direct
         // in-app publisher-browser fallback. We do not scrape media URLs.
         if let url = URL(string: "https://www.youtube.com/embed/\(videoID)?playsinline=1&rel=0") {
-            webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData,
-                                    timeoutInterval: 20))
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData,
+                                     timeoutInterval: 20)
+            // YouTube requires an identifying HTTP Referer for embedded players
+            // (error 153 otherwise). Identify this app via its real project URL,
+            // rather than an invented domain or a fake operator referrer.
+            request.setValue("https://github.com/Alizhan-T/FireWatch-AI",
+                             forHTTPHeaderField: "Referer")
+            webView.load(request)
         }
         return webView
     }

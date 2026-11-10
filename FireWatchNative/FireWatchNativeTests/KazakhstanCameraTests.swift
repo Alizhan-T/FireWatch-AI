@@ -22,14 +22,17 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertNil(OnDeviceFireDetector.resolvedLabel("2", labelsByID: reverse))
     }
 
-    func testAstanaUsesNewerPublishedCityStreamFirstAndRetainsBackup() {
+    func testAstanaPrioritizesUserSuppliedOfficialCameraPage() {
         let astana = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
         XCTAssertGreaterThanOrEqual(astana.count, 3)
-        XCTAssertEqual(astana.first?.id, "astana-atameken-city-2026")
-        XCTAssertEqual(astana.first?.youtubeVideoID, "sR4YuJ-6UO4")
-        XCTAssertEqual(astana.first?.pageURL.host, "www.youtube.com")
+        XCTAssertEqual(astana.first?.id, "astana-khan-shatyr-publisher")
+        XCTAssertEqual(astana.first?.pageURL.absoluteString,
+                       "https://www.khanshatyr.com/ru/camera")
+        XCTAssertNil(astana.first?.youtubeVideoID, "A publisher page is not a direct HLS feed")
+        XCTAssertTrue(astana.contains {
+            $0.id == "astana-atameken-city-2026" && $0.youtubeVideoID == "sR4YuJ-6UO4"
+        })
         XCTAssertTrue(astana.contains { $0.id == "astana-atameken-live" })
-        XCTAssertTrue(astana.contains { $0.id == "astana-khan-shatyr-publisher" })
     }
 
     func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {

@@ -18,6 +18,8 @@ struct DemoFireScenarioView: View {
     @StateObject private var savedCameras = LocalHLSCameraStore()
     @State private var chosenID: String = ""
     @State private var showFireEffect = true
+    @State private var showScanline = true
+    @State private var useSyntheticStage = true
     @State private var fireHorizontalPosition = 0.58
     @State private var fireScale = 0.65
     @State private var fireVerticalPosition = 0.88
@@ -78,6 +80,15 @@ struct DemoFireScenarioView: View {
         cameras.first { $0.id == chosenID } ?? cameras.first
     }
 
+    private var selectedIsPublisherPage: Bool {
+        guard let camera = selectedCamera else { return false }
+        return camera.streamURL == nil && camera.youtubeID == nil
+    }
+
+    private var canRenderTrainingEffects: Bool {
+        !selectedIsPublisherPage || useSyntheticStage
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -122,10 +133,15 @@ struct DemoFireScenarioView: View {
                         }
                         .pickerStyle(.menu)
                         if let camera = selectedCamera {
+                            let publisherPageOnly = camera.streamURL == nil && camera.youtubeID == nil
+                            let trainingStage = publisherPageOnly && useSyntheticStage
                             // The VFX is anchored to the 250-point VIDEO ONLY.
                             // Camera status, descriptions and controls are outside this clipped stage.
                             ZStack {
-                                if let url = camera.streamURL {
+                                if trainingStage {
+                                    DemoTrainingBackdrop()
+                                        .frame(height: 250)
+                                } else if let url = camera.streamURL {
                                     DirectHLSPlayer(url: url, compact: true)
                                         .id(camera.id)
                                 } else if let videoID = camera.youtubeID {
@@ -147,7 +163,7 @@ struct DemoFireScenarioView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 250)
                             .overlay {
-                                if showFireEffect && (camera.streamURL != nil || camera.youtubeID != nil) {
+                                if showFireEffect && canRenderTrainingEffects {
                                     GeometryReader { geometry in
                                         // AVPlayer letterboxes landscape feeds. Keep
                                         // fire on visible video, not the black bars.
@@ -171,14 +187,30 @@ struct DemoFireScenarioView: View {
                                     .allowsHitTesting(false)
                                 }
                             }
-                            .overlay(alignment: .topLeading) {
-                                Text("DEMO · ИСКУССТВЕННЫЙ ПОЖАР")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.white)
-                                    .padding(8)
-                                    .background(.red.opacity(0.95), in: Capsule())
-                                    .padding(10)
+                            .overlay {
+                                if showScanline && canRenderTrainingEffects {
+                                    GeometryReader { geometry in
+                                        let videoHeight = trainingStage
+                                            ? geometry.size.height
+                                            : min(geometry.size.height, geometry.size.width * 9 / 16)
+                                        DemoScannerOverlay()
+                                            .frame(width: geometry.size.width, height: videoHeight)
+                                            .position(x: geometry.size.width / 2,
+                                                      y: geometry.size.height / 2)
+                                    }
                                     .allowsHitTesting(false)
+                                }
+                            }
+                            .overlay(alignment: .topLeading) {
+                                if canRenderTrainingEffects {
+                                    Text("DEMO · ВИЗУАЛЬНАЯ ИМИТАЦИЯ")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(.red.opacity(0.95), in: Capsule())
+                                        .padding(10)
+                                        .allowsHitTesting(false)
+                                }
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
 
@@ -192,8 +224,10 @@ struct DemoFireScenarioView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
-                            if camera.streamURL == nil && camera.youtubeID == nil {
-                                Label("Это страница оператора, а не прямое видео. VFX здесь отключён: нельзя накладывать огонь на интерфейс сайта.",
+                            if publisherPageOnly {
+                                Label(trainingStage
+                                      ? "Это отдельный синтетический фон: ни видео Хан Шатыра, ни реальные кадры здесь не анализируются."
+                                      : "Открыта страница оператора; VFX отключён поверх HTML-плеера и его кнопок.",
                                       systemImage: "info.circle")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -221,9 +255,20 @@ struct DemoFireScenarioView: View {
                         }
                     }
 
-                    Toggle("Огонь и дым поверх камеры (VFX)", isOn: $showFireEffect)
+                    if selectedIsPublisherPage {
+                        Toggle("Отдельная учебная сцена с эффектами", isOn: $useSyntheticStage)
+                            .tint(.green)
+                        Text("На официальном сайте нет подтверждённого прямого видеопотока. Учебная сцена не выдаётся за изображение с камеры. Сайт можно открыть кнопкой под сценой.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle("Огонь и дым (только DEMO)", isOn: $showFireEffect)
                         .tint(.orange)
-                    if showFireEffect {
+                        .disabled(!canRenderTrainingEffects)
+                    Toggle("Зелёное сканирование (только DEMO)", isOn: $showScanline)
+                        .tint(.green)
+                        .disabled(!canRenderTrainingEffects)
+                    if showFireEffect && canRenderTrainingEffects {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Положение огня по горизонтали")
                                 .font(.caption.bold())

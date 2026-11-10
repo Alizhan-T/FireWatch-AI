@@ -277,6 +277,7 @@ final class HLSPlaybackController: ObservableObject {
 /// AVPlayer opens HLS directly without any FireWatch API or proxy.
 struct DirectHLSPlayer: View {
     let url: URL
+    var showDemoScanner = false
     /// Compact embeds show *only* the 250-point video surface, not captions.
     /// The old DEMO effect mistakenly anchored to the captions' bottom edge.
     var compact: Bool = false
@@ -309,6 +310,11 @@ struct DirectHLSPlayer: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 250)
+            .overlay {
+                if showDemoScanner && playback.phase == .playing {
+                    DemoScannerOverlay()
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 16))
 
             if !compact {
@@ -342,12 +348,19 @@ struct DirectHLSPlayer: View {
 
 struct LocalHLSCameraDetailView: View {
     let camera: LocalHLSCamera
+    @State private var showDemoScanner = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let url = URL(string: camera.streamURL) {
-                    DirectHLSPlayer(url: url)
+                    DirectHLSPlayer(url: url, showDemoScanner: showDemoScanner)
+                    Toggle("Зелёная линия поверх видео (DEMO)", isOn: $showDemoScanner)
+                        .tint(.green)
+                    if showDemoScanner {
+                        Text("Это визуальная анимация: FireWatch не анализирует кадры камеры в этом режиме.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Link("Открыть прямую ссылку HLS", destination: url)
                 }
                 Text(camera.name).font(.title3.bold())

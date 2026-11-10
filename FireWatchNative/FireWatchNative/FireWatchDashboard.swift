@@ -109,8 +109,8 @@ struct FireWatchDashboard: View {
                     .foregroundStyle(.white.opacity(0.8))
                 Spacer()
                 HStack(spacing: 5) {
-                    Circle().fill(.green).frame(width: 7, height: 7)
-                    Text("КАМЕРЫ")
+                    Circle().fill(.orange).frame(width: 7, height: 7)
+                    Text("КАТАЛОГ · НЕ LIVE")
                         .font(.caption2.bold())
                         .foregroundStyle(.white)
                 }
@@ -123,7 +123,7 @@ struct FireWatchDashboard: View {
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Публичные видеопотоки Казахстана и ваши события — в одном приложении.")
+                Text("Потоки HLS, страницы камер Казахстана и ваши события — в одном приложении.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.75))
             }
@@ -162,12 +162,12 @@ struct FireWatchDashboard: View {
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeading("Сводка", subtitle: "Только подтверждённые данные")
+            sectionHeading("Сводка", subtitle: "Каталог источников и ручные события")
             HStack(spacing: 12) {
                 statistic(
-                    title: "HLS-источники",
-                    value: "\(PublicCameraCatalog.candidates.count)",
-                    subtitle: "В каталоге, не статус онлайн",
+                    title: "Источники камер",
+                    value: "\(PublicCameraCatalog.candidates.count + KazakhstanPublisherCameras.candidates.count)",
+                    subtitle: "HLS и страницы · не статус LIVE",
                     symbol: "video.fill",
                     color: Color(red: 0.12, green: 0.53, blue: 0.72)
                 )

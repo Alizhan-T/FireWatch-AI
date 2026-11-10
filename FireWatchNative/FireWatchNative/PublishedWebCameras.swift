@@ -46,6 +46,13 @@ enum KazakhstanPublisherCameras {
             reliabilityNote: "Альтернативная страница источника; доступность видео на iPhone не проверена."
         ),
         .init(
+            id: "astana-khan-shatyr-publisher",
+            cityID: "astana",
+            name: "Астана — Хан Шатыр · официальный сайт",
+            pageURL: URL(string: "https://www.khanshatyr.com/ru/camera")!,
+            reliabilityNote: "Официальная страница Live камер ТРЦ «Хан Шатыр», проспект Туран, 37. Доступность видео в iOS не подтверждена; отдельный HLS-поток не предоставлен. Для огня и сканера используется только отдельная учебная сцена."
+        ),
+        .init(
             id: "astana-atameken-city-2026",
             cityID: "astana",
             name: "Астана — городские виды 24/7 · Atameken Business",
@@ -61,13 +68,7 @@ enum KazakhstanPublisherCameras {
             reliabilityNote: "Ранее опубликованная Atameken Business трансляция, анонсированная 28.01.2026. Резервная ссылка; эфир мог завершиться, а встраивание может быть запрещено.",
             youtubeVideoID: "FKT8MiiKQG4"
         ),
-        .init(
-            id: "astana-khan-shatyr-publisher",
-            cityID: "astana",
-            name: "Астана — Хан Шатыр · официальный сайт",
-            pageURL: URL(string: "https://www.khanshatyr.com/ru/camera")!,
-            reliabilityNote: "Официальный сайт ТРЦ «Хан Шатыр» с разделом Live камеры. Доступность самого видео в WebView не подтверждена; прямой разрешённый HLS-адрес не опубликован."
-        )
+
     ]
 }
 
@@ -131,7 +132,13 @@ struct InAppPublisherPage: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Document completion does NOT verify the embedded video.
             isLoading.wrappedValue = false
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            isLoading.wrappedValue = false
+            errorMessage.wrappedValue = "Процесс видеостраницы остановлен. Нажмите «Повторить» или откройте официальный сайт."
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -160,7 +167,8 @@ struct InAppPublisherPage: UIViewRepresentable {
                 "www.youtube-nocookie.com", "youtube-nocookie.com",
                 "gorset.kz", "www.gorset.kz",
                 "ipcam.kz", "www.ipcam.kz",
-                "player.vimeo.com", "shymbulak.com", "www.shymbulak.com"
+                "player.vimeo.com", "shymbulak.com", "www.shymbulak.com",
+                "khanshatyr.com", "www.khanshatyr.com"
             ]
             guard destination.scheme == "https", trusted.contains(host) else {
                 errorMessage.wrappedValue = "Видеоплеер запросил внешний переход, который недоступен внутри приложения."
@@ -180,6 +188,9 @@ struct PublisherCameraDetailView: View {
     @State private var loadError: String?
     @State private var showSourceBrowser = false
     @State private var embedError: String?
+    @State private var showVideoScanner = false
+    @State private var showVideoFireDemo = false
+    @State private var showSeparateTraining = false
 
     var body: some View {
         ScrollView {
@@ -190,7 +201,44 @@ struct PublisherCameraDetailView: View {
                     EmbeddedYouTubePlayer(videoID: videoID, errorMessage: $embedError)
                         .id(reloadID)
                         .frame(height: 270)
+                        .overlay {
+                            if showVideoScanner {
+                                DemoScannerOverlay()
+                                    .allowsHitTesting(false)
+                            }
+                            if showVideoFireDemo {
+                                GeometryReader { geometry in
+                                    let videoHeight = min(geometry.size.height,
+                                                          geometry.size.width * 9 / 16)
+                                    RealisticFireOverlay()
+                                        .scaleEffect(0.58)
+                                        .position(x: geometry.size.width * 0.65,
+                                                  y: geometry.size.height / 2 + videoHeight * 0.42 - 117 * 0.58)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if showVideoFireDemo {
+                                Text("DEMO • ИСКУССТВЕННЫЙ ОГОНЬ")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .padding(7)
+                                    .background(.red.opacity(0.9), in: Capsule())
+                                    .padding(8)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                    Toggle("Зелёная линия сканирования (DEMO)", isOn: $showVideoScanner)
+                        .tint(.green)
+                    Toggle("Огонь и дым поверх видео (DEMO)", isOn: $showVideoFireDemo)
+                        .tint(.orange)
+                    if showVideoScanner || showVideoFireDemo {
+                        Text("Эффекты только визуальные: кадры не анализируются нейросетью, реальный пожар не обнаружен.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let embedError {
                         Label("Встроенный YouTube: \(embedError)", systemImage: "wifi.exclamationmark")
                             .font(.footnote)
@@ -209,6 +257,20 @@ struct PublisherCameraDetailView: View {
                     if let loadError {
                         Label(loadError, systemImage: "wifi.exclamationmark")
                             .font(.footnote).foregroundStyle(.orange)
+                    }
+                    if !pageLoading && loadError == nil {
+                        Label("Страница загрузилась; работа самого видео не подтверждена",
+                              systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle("Показать учебный пожар и зелёную линию отдельно", isOn: $showSeparateTraining)
+                        .tint(.orange)
+                    if showSeparateTraining {
+                        DemoTrainingStage()
+                        Text("Учебный фон без кадров «Хан Шатыр». Огонь, дым и сканирование — анимация, а не AI-детекция.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 if camera.youtubeVideoID != nil {

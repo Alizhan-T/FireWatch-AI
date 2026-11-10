@@ -8,15 +8,26 @@ struct CameraLibraryView: View {
     @State private var showingLocalAdd = false
     @State private var showingServerAdd = false
     @State private var showUnverified = false
+    @State private var cityFilter = "all"
+
+    private var filteredDirectCameras: [CameraCandidate] {
+        cityFilter == "all" || cityFilter == "aktau" ? PublicCameraCatalog.candidates : []
+    }
+
+    private var filteredPublisherCameras: [PublishedWebCamera] {
+        KazakhstanPublisherCameras.candidates.filter {
+            cityFilter == "all" || $0.cityID == cityFilter
+        }
+    }
 
     private var accessible: [CameraCandidate] {
-        PublicCameraCatalog.candidates.filter {
+        filteredDirectCameras.filter {
             availability.status(for: $0.id) == .playlistAvailable
         }
     }
 
     private var otherCandidates: [CameraCandidate] {
-        PublicCameraCatalog.candidates.filter {
+        filteredDirectCameras.filter {
             availability.status(for: $0.id) != .playlistAvailable
         }
     }
@@ -56,8 +67,15 @@ struct CameraLibraryView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Казахстан · прямой просмотр") {
-                    Text("Нажмите на камеру — видео откроется внутри FireWatch через AVPlayer. На другие сайты переходить не нужно. Используются только публично опубликованные HLS-ссылки камер Казахстана.")
+                Section("Казахстан · выбор города") {
+                    Picker("Город", selection: $cityFilter) {
+                        Text("Все города").tag("all")
+                        Text("Семей").tag("semey")
+                        Text("Актау").tag("aktau")
+                        Text("Алматы").tag("almaty")
+                    }
+                    .pickerStyle(.menu)
+                    Text("Прямые HLS-камеры открываются во встроенном плеере. Для Семея и Алматы пока доступны страницы источников внутри приложения, а не проверенные HLS-потоки.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
@@ -69,7 +87,7 @@ struct CameraLibraryView: View {
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
                         Button("Обновить") {
-                            Task { await availability.refresh(PublicCameraCatalog.candidates) }
+                            Task { await availability.refresh(filteredDirectCameras) }
                         }
                         .disabled(availability.checking)
                     }
@@ -101,6 +119,26 @@ struct CameraLibraryView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+                if !filteredPublisherCameras.isEmpty {
+                    Section("Другие города · источник внутри приложения") {
+                        ForEach(filteredPublisherCameras) { camera in
+                            NavigationLink {
+                                PublisherCameraDetailView(camera: camera)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label(camera.name, systemImage: "video")
+                                        .font(.subheadline.bold())
+                                    Text("Не подтверждён прямой HLS · (camera.city.name)")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        Text("Семей: источник нестабилен, поэтому не отображается как гарантированно онлайн.")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 Section("Природные территории Казахстана") {
@@ -156,11 +194,13 @@ struct CameraLibraryView: View {
             .sheet(isPresented: $showingServerAdd) {
                 AddCameraView(api: api)
             }
-            .task {
-                await availability.refresh(PublicCameraCatalog.candidates)
+            .task(id: cityFilter) {
+                if !filteredDirectCameras.isEmpty {
+                    await availability.refresh(filteredDirectCameras)
+                }
             }
             .refreshable {
-                await availability.refresh(PublicCameraCatalog.candidates)
+                await availability.refresh(filteredDirectCameras)
                 if api.isConnected { await api.refresh() }
             }
         }

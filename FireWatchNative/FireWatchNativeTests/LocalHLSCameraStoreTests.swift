@@ -10,7 +10,7 @@ final class LocalHLSCameraStoreTests: XCTestCase {
     }
 
     func testSavedLinksSurviveStoreRecreation() async throws {
-        await MainActor.run {
+        try await MainActor.run {
             let (defaults, suite) = isolatedDefaults()
             defer { defaults.removePersistentDomain(forName: suite) }
             let first = LocalHLSCameraStore(defaults: defaults)
@@ -26,7 +26,7 @@ final class LocalHLSCameraStoreTests: XCTestCase {
     }
 
     func testBadProtocolsAndNonHLSFilesAreRejected() async throws {
-        await MainActor.run {
+        try await MainActor.run {
             let (defaults, suite) = isolatedDefaults()
             defer { defaults.removePersistentDomain(forName: suite) }
             let store = LocalHLSCameraStore(defaults: defaults)
@@ -46,7 +46,7 @@ final class LocalHLSCameraStoreTests: XCTestCase {
     }
 
     func testDuplicateIsRejectedWithoutErasingOriginal() async throws {
-        await MainActor.run {
+        try await MainActor.run {
             let (defaults, suite) = isolatedDefaults()
             defer { defaults.removePersistentDomain(forName: suite) }
             let store = LocalHLSCameraStore(defaults: defaults)

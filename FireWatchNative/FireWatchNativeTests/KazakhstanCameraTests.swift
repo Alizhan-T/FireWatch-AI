@@ -13,6 +13,15 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertFalse(HLSManifestProbe.looksLikePlaylist(Data()))
     }
 
+    func testCoreMLClassMappingUsesActualCheckpointOrder() {
+        let reverse = ["0": "smoke", "1": "fire"]
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("0", labelsByID: reverse), "smoke")
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("1", labelsByID: reverse), "fire")
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("fire", labelsByID: [:]), "fire")
+        XCTAssertNil(OnDeviceFireDetector.resolvedLabel("0", labelsByID: [:]))
+        XCTAssertNil(OnDeviceFireDetector.resolvedLabel("2", labelsByID: reverse))
+    }
+
     func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {
         let cameras = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
         XCTAssertGreaterThanOrEqual(cameras.count, 2)

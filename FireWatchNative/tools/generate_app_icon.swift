@@ -10,9 +10,25 @@ let assetDirectory = root.appendingPathComponent("FireWatchNative/Assets.xcasset
 try FileManager.default.createDirectory(at: assetDirectory, withIntermediateDirectories: true)
 let output = assetDirectory.appendingPathComponent("AppIcon.png")
 
-let image = NSImage(size: NSSize(width: canvas, height: canvas))
-image.lockFocus()
-defer { image.unlockFocus() }
+// Explicit bitmap context works on headless CI runners and Xcode build scripts.
+// NSImage.lockFocus()/tiffRepresentation can fail when no window server is present.
+guard let bitmap = NSBitmapImageRep(
+    bitmapDataPlanes: nil,
+    pixelsWide: Int(canvas),
+    pixelsHigh: Int(canvas),
+    bitsPerSample: 8,
+    samplesPerPixel: 4,
+    hasAlpha: true,
+    isPlanar: false,
+    colorSpaceName: .deviceRGB,
+    bytesPerRow: 0,
+    bitsPerPixel: 0
+), let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
+    fatalError("Could not create bitmap graphics context for FireWatch icon")
+}
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = graphicsContext
+defer { NSGraphicsContext.restoreGraphicsState() }
 
 NSColor(calibratedRed: 0.055, green: 0.059, blue: 0.076, alpha: 1).setFill()
 NSBezierPath(rect: NSRect(x: 0, y: 0, width: canvas, height: canvas)).fill()
@@ -70,10 +86,9 @@ core.close()
 NSColor(calibratedRed: 1.0, green: 0.32, blue: 0.12, alpha: 1).setFill()
 core.fill()
 
-guard let tiff = image.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: tiff),
-      let data = bitmap.representation(using: .png, properties: [:]) else {
-    fatalError("Could not render FireWatch app icon")
+graphicsContext.flushGraphics()
+guard let data = bitmap.representation(using: .png, properties: [:]) else {
+    fatalError("Could not encode FireWatch app icon PNG")
 }
 try data.write(to: output, options: .atomic)
 print("FireWatch icon generated at \(output.path)")

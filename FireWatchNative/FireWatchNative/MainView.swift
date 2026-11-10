@@ -119,6 +119,20 @@ struct MainView: View {
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        HStack {
+                            Text("Мои события").font(.headline)
+                            Spacer()
+                            Button("Открыть журнал") { selectedTab = 2 }
+                                .font(.caption.bold())
+                        }
+                        ForEach(localEvents.events.prefix(3)) { event in
+                            NavigationLink {
+                                LocalEventDetailView(store: localEvents, event: event)
+                            } label: {
+                                LocalEventCard(event: event)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     } else {
                     if let error = api.error {
                         Label(error, systemImage: "wifi.exclamationmark")
@@ -258,7 +272,7 @@ struct MainView: View {
             }
             .mapStyle(.standard(elevation: .realistic))
             .safeAreaInset(edge: .top) {
-                Text("Бирюзовые точки — публичный каталог; доступность потоков не проверена.")
+                Text("Бирюзовые — HLS, серые — непроверенные камеры, оранжевые — DEMO, красные — сообщения. Отметки по центру города приблизительные.")
                     .font(.caption2)
                     .padding(10)
                     .frame(maxWidth: .infinity)

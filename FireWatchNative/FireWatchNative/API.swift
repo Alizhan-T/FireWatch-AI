@@ -39,6 +39,7 @@ final class API: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var lastSuccessfulSync: Date?
     @Published var error: String?
+    private var configurationRevision = 0
 
     func saveURL() throws {
         let cleaned = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,6 +49,15 @@ final class API: ObservableObject {
               ["http", "https"].contains(scheme), url.host != nil else {
             throw FireWatchAPIError.invalidServerURL
         }
+        configurationRevision += 1
+        isConnected = false
+        // Never show incidents/camera data from the previous server while switching.
+        incidents = []
+        cameras = []
+        stats = nil
+        health = nil
+        lastSuccessfulSync = nil
+        error = nil
         baseURL = cleaned
         UserDefaults.standard.set(cleaned, forKey: "firewatch.server")
         KeychainStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey")
@@ -55,6 +65,7 @@ final class API: ObservableObject {
 
     /// Explicitly enable the standalone iPhone mode without deleting saved HLS links.
     func useWithoutServer() {
+        configurationRevision += 1
         baseURL = ""
         UserDefaults.standard.removeObject(forKey: "firewatch.server")
         incidents = []
@@ -189,12 +200,15 @@ final class API: ObservableObject {
         guard !loading else { return }
         loading = true
         defer { loading = false }
+        let revision = configurationRevision
+        let endpointURL = baseURL
         do {
             async let h: ServerHealth = request("/health")
             async let i: [Incident] = request("/incidents?limit=100")
             async let c: [Camera] = request("/cameras")
             async let s: Stats = request("/stats")
             let (serverHealth, serverIncidents, serverCameras, serverStats) = try await (h, i, c, s)
+            guard revision == configurationRevision && baseURL == endpointURL else { return }
             health = serverHealth
             incidents = serverIncidents
             cameras = serverCameras
@@ -203,6 +217,7 @@ final class API: ObservableObject {
             lastSuccessfulSync = Date()
             error = isConnected ? nil : "Сервер доступен, но база данных или часть сервисов работает с ошибкой."
         } catch {
+            guard revision == configurationRevision && baseURL == endpointURL else { return }
             isConnected = false
             self.error = error.localizedDescription
         }

@@ -4,6 +4,8 @@ import AVKit
 struct CameraLibraryView: View {
     @ObservedObject var api: API
     @State private var showingAdd = false
+    @State private var showingLocalAdd = false
+    @StateObject private var localStore = LocalHLSCameraStore()
     @State private var candidates: [CameraCandidate] = []
     @State private var candidateLoading = false
     @State private var candidateError: String?
@@ -59,6 +61,27 @@ struct CameraLibraryView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("Мои HLS-камеры · без сервера") {
+                    Text("Добавьте прямые HLS-ссылки для просмотра на iPhone. Камеры сохраняются локально и доступны даже без FireWatch API; для воспроизведения нужен интернет.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    ForEach(localStore.cameras) { camera in
+                        NavigationLink {
+                            LocalHLSCameraDetailView(camera: camera)
+                        } label: {
+                            Label(camera.name, systemImage: "video.fill")
+                        }
+                    }
+                    .onDelete { indices in
+                        for index in indices {
+                            localStore.remove(localStore.cameras[index])
+                        }
+                    }
+                    Button {
+                        showingLocalAdd = true
+                    } label: {
+                        Label("Добавить HLS-камеру на iPhone", systemImage: "plus.circle.fill")
+                    }
+                }
                 Section {
                     Text("Подключайте только собственные камеры или публичные потоки, доступ к которым разрешён оператором. RTSP проверяется на сервере через FFmpeg; iPhone воспроизводит HLS.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -144,7 +167,7 @@ struct CameraLibraryView: View {
                     Text("Видео открывается у издателя. Автоматический анализ YouTube-потока в FireWatch не выполняется.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if api.cameras.isEmpty {
+                if api.isConnected && api.cameras.isEmpty {
                     Section {
                         ContentUnavailableView("Камеры не добавлены", systemImage: "video.slash",
                             description: Text("Добавьте разрешённый HLS/RTSP-поток или выберите публичный кандидат выше."))
@@ -171,10 +194,13 @@ struct CameraLibraryView: View {
             .navigationTitle("Камеры")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    if api.isConnected {
+                        Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    }
                 }
             }
             .sheet(isPresented: $showingAdd) { AddCameraView(api: api) }
+            .sheet(isPresented: $showingLocalAdd) { AddLocalHLSCameraView(store: localStore) }
             .task { await loadCandidates() }
             .refreshable {
                 await api.refresh()
@@ -186,15 +212,11 @@ struct CameraLibraryView: View {
 
 private struct PublicCameraDetailView: View {
     let candidate: CameraCandidate
-    @State private var player: AVPlayer?
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let player {
-                    VideoPlayer(player: player)
-                        .frame(height: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                if let url = URL(string: candidate.url) {
+                    DirectHLSPlayer(url: url)
                 } else {
                     ContentUnavailableView("Поток не открылся", systemImage: "video.slash",
                         description: Text("Проверьте ссылку у оператора. Встроенный каталог не проверяет доступность потока в реальном времени."))
@@ -224,16 +246,6 @@ private struct PublicCameraDetailView: View {
         }
         .navigationTitle("Публичная камера")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            guard player == nil, let url = URL(string: candidate.url) else { return }
-            let streamPlayer = AVPlayer(url: url)
-            player = streamPlayer
-            streamPlayer.play()
-        }
-        .onDisappear {
-            player?.pause()
-            player = nil
-        }
     }
 }
 

@@ -7,6 +7,13 @@ struct LocalHLSCamera: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
     var streamURL: String
+    /// Optional for backwards compatibility with previously saved bookmarks.
+    var cityID: String?
+
+    var cityTitle: String {
+        guard let cityID else { return "Город не указан" }
+        return KazakhstanCities.find(cityID).name
+    }
 }
 
 enum LocalHLSCameraError: LocalizedError {
@@ -37,7 +44,7 @@ final class LocalHLSCameraStore: ObservableObject {
         }
     }
 
-    func add(name: String, streamURL: String) throws {
+    func add(name: String, streamURL: String, cityID: String? = nil) throws {
         let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let address = streamURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty,
@@ -48,10 +55,14 @@ final class LocalHLSCameraStore: ObservableObject {
               url.path.lowercased().hasSuffix(".m3u8") else {
             throw LocalHLSCameraError.invalid
         }
+        if let cityID, !KazakhstanCities.all.contains(where: { $0.id == cityID }) {
+            throw LocalHLSCameraError.invalid
+        }
         guard !cameras.contains(where: { $0.streamURL == address }) else {
             throw LocalHLSCameraError.duplicate
         }
-        cameras.append(LocalHLSCamera(id: UUID(), name: title, streamURL: address))
+        cameras.append(LocalHLSCamera(id: UUID(), name: title, streamURL: address,
+                                      cityID: cityID))
         persist()
     }
 
@@ -93,6 +104,7 @@ final class HLSPlaybackController: ObservableObject {
     private var stalledObserver: NSObjectProtocol?
     private var watchdog: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var progressMonitor: Task<Void, Never>?
 
     func start(_ url: URL) {
         guard self.url != url || player == nil else { return }
@@ -117,6 +129,8 @@ final class HLSPlaybackController: ObservableObject {
     }
 
     private func clearPlayback() {
+        progressMonitor?.cancel()
+        progressMonitor = nil
         watchdog?.cancel()
         watchdog = nil
         reconnectTask?.cancel()
@@ -167,6 +181,7 @@ final class HLSPlaybackController: ObservableObject {
                     self.attempts = 0
                     self.watchdog?.cancel()
                     self.watchdog = nil
+                    self.monitorPlaybackProgress(token)
                 case .waitingToPlayAtSpecifiedRate:
                     if self.phase == .playing {
                         self.phase = .buffering
@@ -202,6 +217,35 @@ final class HLSPlaybackController: ObservableObject {
             } catch { return }
             guard let self, self.session == token, self.phase != .playing else { return }
             self.recover(reason: "Камера не передаёт видео в течение 20 секунд", token: token)
+        }
+    }
+
+    /// A player may claim .playing but stop advancing, e.g. after a
+    /// disconnected HLS segment. Check progress without continuously polling
+    /// an upstream camera or launching an unbounded reconnect loop.
+    private func monitorPlaybackProgress(_ token: UUID) {
+        progressMonitor?.cancel()
+        progressMonitor = Task { [weak self] in
+            var previousTime: Double?
+            var stalledChecks = 0
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch { return }
+                guard let self, self.session == token, self.phase == .playing else { return }
+                guard let currentTime = self.player?.currentTime().seconds,
+                      currentTime.isFinite else { continue }
+                if let previousTime, currentTime <= previousTime + 0.15 {
+                    stalledChecks += 1
+                } else {
+                    stalledChecks = 0
+                }
+                previousTime = currentTime
+                if stalledChecks >= 3 {
+                    self.recover(reason: "Видео перестало обновляться", token: token)
+                    return
+                }
+            }
         }
     }
 
@@ -324,6 +368,7 @@ struct AddLocalHLSCameraView: View {
     @ObservedObject var store: LocalHLSCameraStore
     @State private var name = ""
     @State private var streamURL = ""
+    @State private var cityID = "astana"
     @State private var errorMessage: String?
 
     var body: some View {
@@ -335,6 +380,14 @@ struct AddLocalHLSCameraView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                    Picker("Город камеры", selection: $cityID) {
+                        ForEach(KazakhstanCities.all) { city in
+                            Text(city.name).tag(city.id)
+                        }
+                    }
+                    Text("Укажите город фактической камеры: ссылка на другой город не станет камерой Астаны.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Сохраняется только на iPhone. Поддерживается прямой HLS (.m3u8). RTSP без конвертации не воспроизводится AVPlayer. Используйте лишь потоки с разрешённым просмотром.")
@@ -352,7 +405,7 @@ struct AddLocalHLSCameraView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Сохранить") {
                         do {
-                            try store.add(name: name, streamURL: streamURL)
+                            try store.add(name: name, streamURL: streamURL, cityID: cityID)
                             dismiss()
                         } catch {
                             errorMessage = error.localizedDescription

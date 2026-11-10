@@ -24,6 +24,7 @@ struct DemoFireScenarioView: View {
     @State private var showSourceBrowser = false
     @State private var publisherLoading = true
     @State private var publisherError: String?
+    @State private var embeddedVideoError: String?
     @State private var notificationStatus = "Тестовые уведомления не отправляются службам спасения."
     @State private var didRequestNotification = false
     @Environment(\.dismiss) private var dismiss
@@ -52,8 +53,8 @@ struct DemoFireScenarioView: View {
             return TrainingCameraOption(
                 id: "personal.\(camera.id.uuidString)",
                 title: camera.name,
-                city: "Пользовательский источник",
-                cityID: "personal",
+                city: camera.cityTitle,
+                cityID: camera.cityID ?? "personal",
                 streamURL: url,
                 youtubeID: nil,
                 publisherPageURL: nil
@@ -128,7 +129,7 @@ struct DemoFireScenarioView: View {
                                     DirectHLSPlayer(url: url, compact: true)
                                         .id(camera.id)
                                 } else if let videoID = camera.youtubeID {
-                                    EmbeddedYouTubePlayer(videoID: videoID)
+                                    EmbeddedYouTubePlayer(videoID: videoID, errorMessage: $embeddedVideoError)
                                         .frame(height: 250)
                                         .id(camera.id)
                                 } else if let pageURL = camera.publisherPageURL {
@@ -181,6 +182,16 @@ struct DemoFireScenarioView: View {
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
 
+                            if camera.youtubeID != nil {
+                                if let embeddedVideoError {
+                                    Label("YouTube: \(embeddedVideoError)", systemImage: "wifi.exclamationmark")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                                Text("Если трансляция не появилась, откройте источник через кнопку ниже или выберите другой эфир. Успех загрузки страницы не подтверждает LIVE.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                             if camera.streamURL == nil && camera.youtubeID == nil {
                                 Label("Это страница оператора, а не прямое видео. VFX здесь отключён: нельзя накладывать огонь на интерфейс сайта.",
                                       systemImage: "info.circle")
@@ -270,11 +281,19 @@ struct DemoFireScenarioView: View {
             }
             .padding()
         }
+        .onChange(of: chosenID) { _, _ in
+            embeddedVideoError = nil
+            publisherError = nil
+            publisherLoading = true
+        }
         .navigationTitle("Учебный пожар")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if chosenID.isEmpty {
-                chosenID = cameras.first(where: { $0.cityID == event.cityID })?.id ??
+                chosenID = cameras.first(where: {
+                    $0.cityID == event.cityID && $0.id.hasPrefix("personal.")
+                })?.id ??
+                           cameras.first(where: { $0.cityID == event.cityID })?.id ??
                            cameras.first(where: { $0.cityID == "aktau" })?.id ??
                            cameras.first?.id ?? ""
             }

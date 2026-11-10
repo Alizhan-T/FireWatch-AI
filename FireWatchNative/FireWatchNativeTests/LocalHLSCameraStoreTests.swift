@@ -25,6 +25,30 @@ final class LocalHLSCameraStoreTests: XCTestCase {
         }
     }
 
+    func testAstanaBookmarkCityPersistsAndOldBookmarksStillDecode() async throws {
+        try await MainActor.run {
+            let (defaults, suite) = isolatedDefaults()
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let store = LocalHLSCameraStore(defaults: defaults)
+            XCTAssertNoThrow(try store.add(name: "My Astana Camera",
+                                           streamURL: "https://example.com/astana/index.m3u8",
+                                           cityID: "astana"))
+            XCTAssertEqual(store.cameras.first?.cityID, "astana")
+            XCTAssertEqual(store.cameras.first?.cityTitle, "Астана")
+
+            let reloaded = LocalHLSCameraStore(defaults: defaults)
+            XCTAssertEqual(reloaded.cameras.first?.cityID, "astana")
+
+            let previousVersion = Data(#"[{"id":"00000000-0000-0000-0000-000000000001","name":"Old","streamURL":"https://example.com/old.m3u8"}]"#.utf8)
+            let restored = try? JSONDecoder().decode([LocalHLSCamera].self, from: previousVersion)
+            XCTAssertEqual(restored?.first?.name, "Old")
+            XCTAssertNil(restored?.first?.cityID)
+            XCTAssertThrowsError(try store.add(name: "Invalid",
+                                              streamURL: "https://example.com/another.m3u8",
+                                              cityID: "not-a-city"))
+        }
+    }
+
     func testBadProtocolsAndNonHLSFilesAreRejected() async throws {
         try await MainActor.run {
             let (defaults, suite) = isolatedDefaults()

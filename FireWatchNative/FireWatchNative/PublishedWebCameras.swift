@@ -46,11 +46,19 @@ enum KazakhstanPublisherCameras {
             reliabilityNote: "Альтернативная страница источника; доступность видео на iPhone не проверена."
         ),
         .init(
+            id: "astana-atameken-city-2026",
+            cityID: "astana",
+            name: "Астана — городские виды 24/7 · Atameken Business",
+            pageURL: URL(string: "https://www.youtube.com/watch?v=sR4YuJ-6UO4")!,
+            reliabilityNote: "Опубликованная Atameken Business 24.02.2026 городская трансляция с видами на Хан Шатыр и мост Кунаева. Актуальное воспроизведение и разрешение на встраивание проверяются на вашем iPhone; прямого HLS нет.",
+            youtubeVideoID: "sR4YuJ-6UO4"
+        ),
+        .init(
             id: "astana-atameken-live",
             cityID: "astana",
-            name: "Астана — вид города (Atameken Business)",
+            name: "Астана — резервный эфир · Atameken Business",
             pageURL: URL(string: "https://www.youtube.com/live/FKT8MiiKQG4")!,
-            reliabilityNote: "Официальный эфир, анонсированный 28.01.2026. YouTube может запретить встроенное видео; воспользуйтесь кнопкой «Открыть источник внутри приложения». LIVE не проверен на устройстве.",
+            reliabilityNote: "Ранее опубликованная Atameken Business трансляция, анонсированная 28.01.2026. Резервная ссылка; эфир мог завершиться, а встраивание может быть запрещено.",
             youtubeVideoID: "FKT8MiiKQG4"
         ),
         .init(
@@ -171,6 +179,7 @@ struct PublisherCameraDetailView: View {
     @State private var pageLoading = true
     @State private var loadError: String?
     @State private var showSourceBrowser = false
+    @State private var embedError: String?
 
     var body: some View {
         ScrollView {
@@ -178,10 +187,15 @@ struct PublisherCameraDetailView: View {
                 Text(camera.name)
                     .font(.title3.bold())
                 if let videoID = camera.youtubeVideoID {
-                    EmbeddedYouTubePlayer(videoID: videoID)
+                    EmbeddedYouTubePlayer(videoID: videoID, errorMessage: $embedError)
                         .id(reloadID)
                         .frame(height: 270)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                    if let embedError {
+                        Label("Встроенный YouTube: \(embedError)", systemImage: "wifi.exclamationmark")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
                 } else {
                     InAppPublisherPage(url: camera.pageURL,
                                        isLoading: $pageLoading,
@@ -198,13 +212,14 @@ struct PublisherCameraDetailView: View {
                     }
                 }
                 if camera.youtubeVideoID != nil {
-                    Text("Если YouTube не воспроизводится во встроенном окне, откройте страницу владельца в защищённом браузере внутри приложения.")
+                    Text("Если изображение чёрное, YouTube сообщает об ошибке или требует дополнительной проверки, нажмите ниже «Смотреть эфир во встроенном браузере». Это другой режим просмотра, не обход ограничений издателя.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Button {
                     showSourceBrowser = true
                 } label: {
-                    Label("Открыть источник внутри приложения", systemImage: "globe")
+                    Label(camera.youtubeVideoID == nil ? "Открыть страницу камеры" :
+                          "Смотреть эфир во встроенном браузере", systemImage: "globe")
                 }
                 .buttonStyle(.borderedProminent)
                 .sheet(isPresented: $showSourceBrowser) {
@@ -218,6 +233,7 @@ struct PublisherCameraDetailView: View {
                     .foregroundStyle(.orange)
                 Button {
                     loadError = nil
+                    embedError = nil
                     pageLoading = true
                     reloadID = UUID()
                 } label: {

@@ -22,6 +22,16 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertNil(OnDeviceFireDetector.resolvedLabel("2", labelsByID: reverse))
     }
 
+    func testAstanaUsesNewerPublishedCityStreamFirstAndRetainsBackup() {
+        let astana = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
+        XCTAssertGreaterThanOrEqual(astana.count, 3)
+        XCTAssertEqual(astana.first?.id, "astana-atameken-city-2026")
+        XCTAssertEqual(astana.first?.youtubeVideoID, "sR4YuJ-6UO4")
+        XCTAssertEqual(astana.first?.pageURL.host, "www.youtube.com")
+        XCTAssertTrue(astana.contains { $0.id == "astana-atameken-live" })
+        XCTAssertTrue(astana.contains { $0.id == "astana-khan-shatyr-publisher" })
+    }
+
     func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {
         let cameras = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
         XCTAssertGreaterThanOrEqual(cameras.count, 2)

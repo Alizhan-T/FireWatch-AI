@@ -80,7 +80,7 @@ struct InAppCameraBrowser: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
-private struct InAppPublisherPage: UIViewRepresentable {
+struct InAppPublisherPage: UIViewRepresentable {
     let url: URL
     @Binding var isLoading: Bool
     @Binding var errorMessage: String?

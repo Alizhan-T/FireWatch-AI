@@ -2,12 +2,14 @@ import Foundation
 import UserNotifications
 import UIKit
 
+enum DemoSOSCategory {
+    static let identifier = "FIREWATCH_DEMO_TRAINING"
+}
+
 /// Only local iPhone notifications for deliberate, user-initiated test events.
 /// No APNs/Firebase credentials, no backend, no 112 call and no real SOS dispatch.
 @MainActor
 enum DemoSOSNotifications {
-    static let category = "FIREWATCH_DEMO_TRAINING"
-
     static func schedule(for event: LocalFireEvent) async -> String {
         guard event.isSimulation else {
             return "Уведомление SOS доступно только в учебном DEMO-режиме."
@@ -27,7 +29,7 @@ enum DemoSOSNotifications {
             content.title = "SOS · ДЕМО · УЧЕБНАЯ ТРЕВОГА"
             content.body = "Симуляция: \(event.kind.lowercased()) · \(event.city.name). Это не реальный пожар. Никто не вызван."
             content.sound = .default
-            content.categoryIdentifier = category
+            content.categoryIdentifier = DemoSOSCategory.identifier
             content.userInfo = ["firewatch_demo": true, "event_id": event.id.uuidString]
             let request = UNNotificationRequest(
                 identifier: "firewatch.demo.\(event.id.uuidString).\(UUID().uuidString)",
@@ -44,6 +46,7 @@ enum DemoSOSNotifications {
 
 /// Local notifications are displayed in the foreground as well; this is NOT
 /// remote push and does not require a paid Apple Developer Program membership.
+@MainActor
 final class FireWatchLocalNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
@@ -58,7 +61,7 @@ final class FireWatchLocalNotificationDelegate: NSObject, UIApplicationDelegate,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        if notification.request.content.categoryIdentifier == DemoSOSNotifications.category {
+        if notification.request.content.categoryIdentifier == DemoSOSCategory.identifier {
             completionHandler([.banner, .list, .sound])
         } else {
             completionHandler([])

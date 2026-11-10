@@ -53,6 +53,19 @@ final class API: ObservableObject {
         KeychainStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey")
     }
 
+    /// Explicitly enable the standalone iPhone mode without deleting saved HLS links.
+    func useWithoutServer() {
+        baseURL = ""
+        UserDefaults.standard.removeObject(forKey: "firewatch.server")
+        incidents = []
+        cameras = []
+        stats = nil
+        health = nil
+        isConnected = false
+        error = nil
+        lastSuccessfulSync = nil
+    }
+
     func absoluteURL(for path: String?) -> URL? {
         guard let path, !path.isEmpty, let base = try? serverBaseURL() else { return nil }
         if let absolute = URL(string: path), absolute.scheme != nil { return absolute }
@@ -168,6 +181,11 @@ final class API: ObservableObject {
     }
 
     func refresh() async {
+        guard !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            isConnected = false
+            error = nil
+            return
+        }
         guard !loading else { return }
         loading = true
         defer { loading = false }

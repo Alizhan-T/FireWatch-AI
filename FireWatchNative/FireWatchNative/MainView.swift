@@ -17,6 +17,8 @@ struct MainView: View {
     @State private var selectedTab = 0
     @State private var pushIncident: Incident?
     @State private var selectedPublicCamera: CameraCandidate?
+    @State private var selectedPublisherCamera: PublishedWebCamera?
+    @State private var selectedLocalEvent: LocalFireEvent?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -210,9 +212,14 @@ struct MainView: View {
                 ForEach(localEvents.events.filter { !$0.resolved }) { event in
                     Annotation(event.title,
                                coordinate: CLLocationCoordinate2D(latitude: event.city.lat, longitude: event.city.lon)) {
-                        Image(systemName: event.isSimulation ? "play.square.fill" : "flame.fill")
-                            .foregroundStyle(.white).padding(8)
-                            .background(event.isSimulation ? Color.orange : Color.red, in: Circle())
+                        Button {
+                            selectedLocalEvent = event
+                        } label: {
+                            Image(systemName: event.isSimulation ? "play.square.fill" : "flame.fill")
+                                .foregroundStyle(.white).padding(8)
+                                .background(event.isSimulation ? Color.orange : Color.red, in: Circle())
+                        }
+                        .accessibilityLabel(event.isSimulation ? "DEMO в \(event.city.name)" : "Ручное событие в \(event.city.name)")
                     }
                 }
                 ForEach(api.cameras) { camera in
@@ -235,6 +242,19 @@ struct MainView: View {
                         .accessibilityLabel("Смотреть \(candidate.name)")
                     }
                 }
+                ForEach(KazakhstanPublisherCameras.candidates) { camera in
+                    Annotation(camera.name,
+                               coordinate: CLLocationCoordinate2D(latitude: camera.city.lat, longitude: camera.city.lon)) {
+                        Button {
+                            selectedPublisherCamera = camera
+                        } label: {
+                            Image(systemName: "video")
+                                .foregroundStyle(.white).padding(8)
+                                .background(.gray, in: Circle())
+                        }
+                        .accessibilityLabel("Непроверенная камера: \(camera.name)")
+                    }
+                }
             }
             .mapStyle(.standard(elevation: .realistic))
             .safeAreaInset(edge: .top) {
@@ -248,6 +268,16 @@ struct MainView: View {
             .sheet(item: $selectedPublicCamera) { candidate in
                 NavigationStack {
                     PublicCameraDetailView(candidate: candidate)
+                }
+            }
+            .sheet(item: $selectedPublisherCamera) { camera in
+                NavigationStack {
+                    PublisherCameraDetailView(camera: camera)
+                }
+            }
+            .sheet(item: $selectedLocalEvent) { event in
+                NavigationStack {
+                    LocalEventDetailView(store: localEvents, event: event)
                 }
             }
             .toolbar {

@@ -72,7 +72,7 @@ struct CameraLibraryView: View {
                         }
                     }
                     .onDelete { indices in
-                        for index in indices {
+                        for index in indices.sorted(by: >) {
                             localStore.remove(localStore.cameras[index])
                         }
                     }

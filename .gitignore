@@ -28,3 +28,4 @@ package.json
 .venv-coreml/
 FireWatchNative/FireWatchNative/Models/*.mlpackage/
 backend/models/*.mlpackage/
+FireWatchNative/FireWatchNative/Models/*_labels.json

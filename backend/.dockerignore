@@ -1,0 +1,10 @@
+.venv
+.env*
+data
+media
+__pycache__
+**/__pycache__
+.pytest_cache
+firebase-service-account*.json
+*.pem
+*.p8

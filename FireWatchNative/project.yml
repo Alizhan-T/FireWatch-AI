@@ -1,0 +1,43 @@
+name: FireWatchNative
+options:
+  bundleIdPrefix: kz.firewatch
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    SUPPORTS_MACCATALYST: NO
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.0.0
+targets:
+  FireWatchNative:
+    type: application
+    platform: iOS
+    dependencies:
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseMessaging
+    sources:
+      - path: FireWatchNative
+    info:
+      path: Info.plist
+    attributes:
+      SystemCapabilities:
+        com.apple.Push:
+          enabled: 1
+    entitlements:
+      path: FireWatchNative.entitlements
+      properties:
+        aps-environment: development
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kz.firewatch.native
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""

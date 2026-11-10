@@ -6,6 +6,7 @@ import socket
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -59,6 +60,20 @@ class Settings:
         default_factory=lambda: os.getenv("ENV_MODE", "local_dev").strip().lower()
     )
     host: str = field(default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip())
+    api_access_token: str = field(default_factory=lambda: os.getenv("API_ACCESS_TOKEN", "").strip())
+    camera_auto_scan_enabled: bool = field(
+        default_factory=lambda: os.getenv("CAMERA_AUTO_SCAN_ENABLED", "false").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+    camera_auto_scan_interval_sec: int = field(
+        default_factory=lambda: max(10, int(os.getenv("CAMERA_AUTO_SCAN_INTERVAL_SEC", "30")))
+    )
+    camera_confirmation_frames: int = field(
+        default_factory=lambda: int(os.getenv("CAMERA_CONFIRMATION_FRAMES", "3"))
+    )
+    camera_alert_min_confidence: float = field(
+        default_factory=lambda: float(os.getenv("CAMERA_ALERT_MIN_CONFIDENCE", "0.5"))
+    )
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
 
     database_path: Path = field(
@@ -112,6 +127,27 @@ class Settings:
     max_concurrent_jobs: int = field(
         default_factory=lambda: int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
     )
+
+    def validate(self) -> None:
+        if self.env_mode not in ("local_dev", "production"):
+            raise ValueError("ENV_MODE must be local_dev or production")
+        if self.detector not in ("auto", "yolo", "heuristic"):
+            raise ValueError("DETECTOR must be auto, yolo or heuristic")
+        if not 0 < self.detection_conf <= 1 or not 0 < self.camera_alert_min_confidence <= 1:
+            raise ValueError("Detection confidence thresholds must be in (0, 1]")
+        if not 1 <= self.camera_confirmation_frames <= 30:
+            raise ValueError("CAMERA_CONFIRMATION_FRAMES must be between 1 and 30")
+        if self.max_concurrent_jobs < 1 or self.camera_auto_scan_interval_sec <= 0:
+            raise ValueError("Job limit and scan interval must be positive")
+        if self.env_mode == "production":
+            if len(self.api_access_token) < 32 or not self.api_access_token.isascii():
+                raise ValueError("Production requires an ASCII API_ACCESS_TOKEN of at least 32 characters")
+            url = urlsplit(self.public_base_url)
+            if (url.scheme != "https" or not url.hostname or url.username or url.password
+                    or url.query or url.fragment or url.path not in ("", "/")):
+                raise ValueError("Production requires PUBLIC_BASE_URL=https://your-domain (no path or credentials)")
+            if self.detector != "yolo":
+                raise ValueError("Production requires DETECTOR=yolo; silent demo fallback is disabled")
 
     def firebase_credentials_path(self) -> str:
         return (

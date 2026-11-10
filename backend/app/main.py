@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import io
 import json
+import hmac
 import logging
 import random
 import shutil
 import time
 import uuid
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request,
                      UploadFile)
@@ -26,6 +31,7 @@ from .config import BASE_DIR, Settings, get_settings
 from .db import Database, new_id, now_iso
 from .demo_assets import BUILTIN_DEMO_VIDEOS_META, ensure_demo_image, ensure_demo_videos
 from .detection import build_detector, severity_for
+from .monitoring import ConfirmationTracker
 from .schemas import (AnalyzeVideoFrameRequest, Camera, CameraCreate, CameraWithStatus,
                       DemoVideo,
                       DetectionResult, DeviceIn, Incident, IncidentCreate,
@@ -51,6 +57,7 @@ class SimulateRequest(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    settings.validate()
     settings.media_dir.mkdir(parents=True, exist_ok=True)
     (settings.media_dir / "uploads").mkdir(exist_ok=True)
     (settings.media_dir / "clips").mkdir(exist_ok=True)
@@ -58,11 +65,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     media_demo_videos_dir.mkdir(exist_ok=True)
     (settings.media_dir / "snapshots").mkdir(exist_ok=True)
 
+    scanner_task: asyncio.Task | None = None
+    scanner_enabled = False
+    scanner_last_error: str | None = None
+    scanner_last_run_at: str | None = None
+    scanner_current_camera: str | None = None
+    scanner_metrics = {"attempted": 0, "succeeded": 0, "failed": 0, "confirmed": 0}
+    scanner_results: dict[str, dict] = {}
+    confirmations = ConfirmationTracker(settings.camera_confirmation_frames,
+                                       settings.camera_alert_min_confidence)
+    cameras_lock = threading.RLock()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        nonlocal scanner_last_error
+        if settings.camera_auto_scan_enabled:
+            try:
+                start_camera_auto_scan(require_cameras=False)
+            except HTTPException as exc:
+                scanner_last_error = str(exc.detail)
+                log.error("Camera auto-scan was not started: %s", scanner_last_error)
+        try:
+            yield
+        finally:
+            await stop_camera_auto_scan()
+
     app = FastAPI(
         title="FireWatch AI API",
         version="1.0.0",
         description="Мониторинг лесных пожаров: инциденты, AI-детекция огня/дыма, "
                     "демо-симуляция, push-уведомления.",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -71,6 +104,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    @app.middleware("http")
+    async def api_key_guard(request: Request, call_next):
+        expected = settings.api_access_token
+        is_liveness = request.url.path == "/live" and request.method in ("GET", "HEAD")
+        if expected and request.method != "OPTIONS" and not is_liveness:
+            supplied = request.headers.get("x-api-key", "")
+            if not hmac.compare_digest(supplied.encode(), expected.encode()):
+                return JSONResponse(status_code=401, content={"detail": "API key required or invalid"})
+        return await call_next(request)
+
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
     db = Database(settings.database_path)
@@ -176,7 +219,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def load_cameras() -> dict[str, dict]:
         try:
-            data = json.loads(settings.cameras_file.read_text("utf-8"))
+            with cameras_lock:
+                data = json.loads(settings.cameras_file.read_text("utf-8"))
             return {c["id"]: Camera(**c).model_dump() for c in data}
         except FileNotFoundError:
             return {}
@@ -186,10 +230,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def save_cameras(cams: dict[str, dict]) -> None:
         settings.cameras_file.parent.mkdir(parents=True, exist_ok=True)
-        settings.cameras_file.write_text(
-            json.dumps(list(cams.values()), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        tmp = settings.cameras_file.with_suffix(".part.json")
+        with cameras_lock:
+            tmp.write_text(json.dumps(list(cams.values()), ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+            tmp.replace(settings.cameras_file)
 
     def to_incident(row: dict) -> dict:
         r = dict(row)
@@ -208,7 +253,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         def _send() -> None:
             res = push.send_incident_alert(db.device_tokens(), title, body, data)
             db.delete_devices(res.get("invalid_tokens") or [])
-            log.info("push for %s: %s", incident["id"], res)
+            log.info("push for %s: sent=%s failed=%s", incident["id"], res["sent"], res["failed"])
 
         background.add_task(_send)
 
@@ -230,11 +275,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "model_name": detector.model_name, "disclaimer": detector.disclaimer,
                 "fallback_reason": detector_fallback_reason}
 
+    def safe_camera_url(raw_url: str) -> str:
+        """Не возвращать RTSP userinfo с логином/паролем в API-ответах."""
+        parts = urlsplit(raw_url)
+        if not parts.username and not parts.password:
+            return raw_url
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
     def camera_with_status(cam: dict) -> dict:
         st = db.get_camera_status(cam["id"]) or {}
         snap = st.get("snapshot_path")
         return {
             **cam,
+            "url": safe_camera_url(cam["url"]),
             "status": st.get("status", "unchecked"),
             "last_checked_at": st.get("last_checked_at"),
             "last_frame_at": st.get("last_frame_at"),
@@ -259,11 +317,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             created_at=r["created_at"],
         )
 
-    async def infer_and_store(img_path: Path, rel: str, det_id: str, *,
-                              source_video_id: str | None = None,
-                              frame_ts: float | None = None):
-        """Единый пайплайн: реальный инференс (переиспользует загруженную модель) в пуле потоков,
-        аннотирование, запись в SQLite. Ограничен семафором heavy_jobs."""
+    async def run_inference(img_path: Path, rel: str):
+        """Run the loaded detector without forcing every camera frame into persistent storage."""
         async with heavy_jobs:
             t0 = time.perf_counter()
             try:
@@ -272,17 +327,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.exception("Detection failed for %s", rel)
                 raise HTTPException(500, f"Ошибка AI-анализа ({type(e).__name__})")
             ms = int((time.perf_counter() - t0) * 1000)
-            boxes = [b.__dict__ for b in out.boxes]
-            ann_rel = None
-            if boxes:
-                ann_rel = f"uploads/{det_id}_annotated.jpg"
-                await run_in_threadpool(annotate, img_path, settings.media_dir / ann_rel, boxes)
+        return out, ms
+
+    async def persist_detection(img_path: Path, rel: str, det_id: str, out, ms: int, *,
+                                source_video_id: str | None = None,
+                                frame_ts: float | None = None):
+        boxes = [b.__dict__ for b in out.boxes]
+        ann_rel = None
+        if boxes:
+            ann_rel = f"uploads/{det_id}_annotated.jpg"
+            await run_in_threadpool(annotate, img_path, settings.media_dir / ann_rel, boxes)
         det = db.create_detection(
             id=det_id, status="completed", mode=detector.mode, provider=detector.provider,
             model_name=detector.model_name, classification=out.classification,
             confidence=out.confidence, boxes=boxes, processing_ms=ms,
             image_path=rel, annotated_path=ann_rel,
             source_video_id=source_video_id, frame_timestamp_sec=frame_ts,
+        )
+        return det, ann_rel
+
+    async def infer_and_store(img_path: Path, rel: str, det_id: str, *,
+                              source_video_id: str | None = None,
+                              frame_ts: float | None = None):
+        out, ms = await run_inference(img_path, rel)
+        det, ann_rel = await persist_detection(
+            img_path, rel, det_id, out, ms,
+            source_video_id=source_video_id, frame_ts=frame_ts,
         )
         return out, det, ann_rel
 
@@ -293,6 +363,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера"})
 
     # ---------------- system ----------------
+    @app.api_route("/live", methods=["GET", "HEAD"], include_in_schema=False)
+    def live():
+        """Minimal public process probe; detailed diagnostics still require the API key."""
+        return {"status": "alive"}
+
+    @app.get("/ready", tags=["system"])
+    def ready():
+        reasons = []
+        try:
+            if not db.ping():
+                reasons.append("database_unavailable")
+        except Exception:
+            reasons.append("database_unavailable")
+        if detector.mode != "real_model":
+            reasons.append("real_model_unavailable")
+        if not capture.ffmpeg_available():
+            reasons.append("ffmpeg_unavailable")
+        if not scanner_enabled or scanner_task is None or scanner_task.done():
+            reasons.append("monitoring_inactive")
+        cams = load_cameras()
+        if not cams:
+            reasons.append("no_cameras")
+        # Sequential scans can each spend up to 20 seconds capturing a frame.
+        freshness_sec = max(120, len(cams) * 45 + settings.camera_auto_scan_interval_sec * 2)
+        unavailable = []
+        for camera_id in cams:
+            status = db.get_camera_status(camera_id) or {}
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(status["last_frame_at"])).total_seconds()
+            except (KeyError, TypeError, ValueError):
+                age = float("inf")
+            if status.get("status") != "online" or age > freshness_sec:
+                unavailable.append(camera_id)
+        scan_failures = [camera_id for camera_id in cams
+                         if not scanner_results.get(camera_id, {}).get("last_success_at")
+                         or scanner_results.get(camera_id, {}).get("error")]
+        if unavailable:
+            reasons.append("cameras_unavailable_or_stale")
+        if cams and scan_failures:
+            reasons.append("camera_analysis_unavailable")
+        return JSONResponse(status_code=503 if reasons else 200, content={
+            "ready": not reasons, "reasons": reasons, "unavailable_cameras": unavailable,
+            "firebase": push.status(), "monitoring": camera_monitoring_status(),
+        })
+
     @app.get("/health", tags=["system"])
     def health():
         db_ok = False
@@ -307,6 +422,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "detector": detector_info(),
             "ffmpeg": capture.ffmpeg_available(),
             "firebase": push.status(),
+            "camera_auto_scan_enabled": scanner_enabled,
+            "camera_auto_scan_active": scanner_task is not None and not scanner_task.done(),
+            "camera_auto_scan_interval_sec": settings.camera_auto_scan_interval_sec,
+            "camera_auto_scan_last_error": scanner_last_error,
+            "camera_auto_scan_last_run_at": scanner_last_run_at,
+            "camera_auto_scan_current_camera": scanner_current_camera,
+            "camera_confirmation_frames": settings.camera_confirmation_frames,
+            "camera_alert_min_confidence": settings.camera_alert_min_confidence,
+            "monitoring_metrics": dict(scanner_metrics),
             "cameras_configured": len(load_cameras()),
             "demo_videos_available": len(sync_demo_videos_dir()),
             "devices_registered": len(db.device_tokens()),
@@ -317,6 +441,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "localhost_url": f"http://127.0.0.1:{settings.port}",
             },
         }
+
+
+    @app.get("/monitoring/status", tags=["monitoring"])
+    def monitoring_status():
+        return camera_monitoring_status()
+
+    @app.post("/monitoring/start", tags=["monitoring"])
+    async def start_monitoring():
+        start_camera_auto_scan(require_cameras=True)
+        return camera_monitoring_status()
+
+    @app.post("/monitoring/stop", tags=["monitoring"])
+    async def stop_monitoring():
+        await stop_camera_auto_scan()
+        return camera_monitoring_status()
 
     @app.get("/network_info", tags=["system"])
     def network_info():
@@ -329,6 +468,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "localhost_url": f"http://127.0.0.1:{settings.port}",
         }
 
+    @app.get("/camera-candidates", tags=["cameras"])
+    def camera_candidates():
+        """Unverified public HLS candidates; users must check availability and operator permissions."""
+        source_note = (
+            "Кандидат из открытых каталогов веб-камер Казахстана. "
+            "HLS-адрес найден в опубликованном M3U-списке и не проверен этим сервером. "
+            "Перед AI-анализом проверьте доступность и разрешение оператора."
+        )
+        source_url = "https://cam.xcom.kz/"
+        catalog_url = "https://pocketworld.org/ru/webcams/country/kz"
+        stream_list_url = "https://pikniktv.info/viewtopic.php?start=50&t=9395"
+        rows = [
+            ("aktau-caspian-14", "Актау — Каспий, 14-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy14/tracks-v1/mono.m3u8", 43.6545, 51.1385),
+            ("aktau-caspian-15", "Актау — Каспий, 15-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy15/tracks-v1/mono.m3u8", 43.6560, 51.1375),
+            ("aktau-caspian-4", "Актау — Каспий, 4-й микрорайон",
+             "https://cam.xcom.kz:8081/caspy4/tracks-v1/mono.m3u8", 43.6364, 51.1553),
+            ("aktau-yntymak", "Актау — площадь Ынтымак",
+             "https://cam.xcom.kz:8081/yntymak/tracks-v1/mono.m3u8", 43.6445, 51.1530),
+            ("aktau-drama", "Актау — драматический театр",
+             "https://cam.xcom.kz:8081/dramteatr/tracks-v1/mono.m3u8", 43.6397, 51.1521),
+            ("aktau-13-microdistrict", "Актау — 13-й микрорайон",
+             "https://cam.xcom.kz:8081/13-1/tracks-v1/index.m3u8", 43.6315, 51.1595),
+        ]
+        return [
+            {"id": item[0], "name": item[1], "url": item[2], "lat": item[3],
+             "lon": item[4], "source_name": "XCOM Aktau",
+             "source_url": source_url, "catalog_url": catalog_url,
+             "stream_list_url": stream_list_url, "verification_note": source_note, "verified": False}
+            for item in rows
+        ]
+
     # ---------------- cameras (только реально добавленные RTSP/HLS) ----------------
     @app.get("/cameras", tags=["cameras"], response_model=list[CameraWithStatus])
     def cameras():
@@ -337,25 +509,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/cameras", tags=["cameras"], response_model=CameraWithStatus, status_code=201)
     def add_camera(body: CameraCreate):
         url = body.url.strip()
-        if not url.lower().startswith(("rtsp://", "rtsps://", "http://", "https://")):
-            raise HTTPException(422, "URL камеры должен начинаться с rtsp://, rtsps://, http:// или https://")
-        cams = load_cameras()
+        try:
+            parsed = urlsplit(url)
+            port = parsed.port  # Accessing .port validates malformed and out-of-range ports.
+        except ValueError:
+            raise HTTPException(422, "Некорректный URL камеры или номер порта")
+        if parsed.scheme.lower() not in ("rtsp", "rtsps", "http", "https") or not parsed.hostname:
+            raise HTTPException(422, "Укажите полный URL камеры с поддерживаемой схемой и именем хоста")
+        if port is not None and not 1 <= port <= 65535:
+            raise HTTPException(422, "Номер порта должен быть от 1 до 65535")
         cam_id = (body.id or new_id("cam")).strip()
-        if cam_id in cams:
-            raise HTTPException(409, f"Камера с id '{cam_id}' уже существует")
         cam = Camera(id=cam_id, name=body.name.strip(), url=url,
                      lat=body.lat, lon=body.lon).model_dump()
-        cams[cam_id] = cam
-        save_cameras(cams)
+        with cameras_lock:
+            cams = load_cameras()
+            if cam_id in cams:
+                raise HTTPException(409, f"Камера с id '{cam_id}' уже существует")
+            cams[cam_id] = cam
+            save_cameras(cams)
         return camera_with_status(cam)
 
     @app.delete("/cameras/{camera_id}", tags=["cameras"])
     def delete_camera(camera_id: str):
-        cams = load_cameras()
-        if camera_id not in cams:
-            raise HTTPException(404, "Камера не найдена")
-        cams.pop(camera_id)
-        save_cameras(cams)
+        with cameras_lock:
+            cams = load_cameras()
+            if camera_id not in cams:
+                raise HTTPException(404, "Камера не найдена")
+            cams.pop(camera_id)
+            save_cameras(cams)
         db.delete_camera_status(camera_id)
         return {"ok": True, "deleted": camera_id, "remaining": len(cams)}
 
@@ -379,6 +560,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 db.upsert_camera_status(camera_id, status="offline", last_error=str(e)[:300],
                                         snapshot_path=None)
         return camera_with_status(cam)
+
+    @app.post("/cameras/{camera_id}/analyze", tags=["cameras"], response_model=DetectionResult)
+    async def analyze_camera_frame(camera_id: str, background: BackgroundTasks):
+        """Захватить текущий кадр разрешённой камеры и проанализировать его текущим детектором."""
+        cams = load_cameras()
+        cam = cams.get(camera_id)
+        if not cam:
+            raise HTTPException(404, "Камера не найдена")
+
+        det_id = new_id("det")
+        rel = f"uploads/{det_id}_camera.jpg"
+        img_path = settings.media_dir / rel
+        try:
+            async with heavy_jobs:
+                await capture.grab_stream_frame(cam["url"], img_path, timeout=20)
+            db.upsert_camera_status(camera_id, status="online", last_error=None,
+                                    snapshot_path=None)
+            out, det, ann_rel = await infer_and_store(img_path, rel, det_id)
+        except capture.CaptureError as e:
+            img_path.unlink(missing_ok=True)
+            db.upsert_camera_status(camera_id, status="offline", last_error=str(e)[:300],
+                                    snapshot_path=None)
+            raise HTTPException(502, f"Не удалось получить кадр камеры: {e}")
+
+        incident_id = None
+        if out.classification != "none":
+            existing = db.find_active_camera_incident(
+                camera_id, out.classification, det["mode"]
+            )
+            if existing:
+                # Сохраняем новую детекцию, но не плодим одинаковые активные тревоги.
+                db.link_detection(det_id, existing["id"])
+                incident_id = existing["id"]
+            else:
+                cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
+                row = db.create_incident(
+                    title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
+                    description="Автоматически создано после анализа одного кадра камеры. "
+                                "Требуется проверка оператором.",
+                    source="camera", camera_id=camera_id,
+                    location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
+                    severity=severity_for(out.classification, out.confidence),
+                    classification=out.classification, confidence=out.confidence,
+                    detection_mode=det["mode"], media_type="image",
+                    media_path=ann_rel or rel,
+                    media_note=("Кадр получен из подключённого видеопотока. "
+                                "Демо-эвристика не является подтверждённым обнаружением."
+                                if det["mode"] != "real_model" else
+                                "Кадр из видеопотока, проанализированный YOLO. Требуется подтверждение человеком."),
+                    is_demo=det["mode"] != "real_model", detection_id=det_id,
+                )
+                db.link_detection(det_id, row["id"])
+                incident_id = row["id"]
+                if det["mode"] == "real_model":
+                    notify(to_incident(row), background)
+                det = db.get_detection(det_id) or det
+
+        result = to_detection_result(det)
+        result.incident_id = incident_id
+        return result
 
     @app.get("/stats", tags=["system"])
     def stats():
@@ -468,7 +709,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source="detection", detection_id=det["id"], detection_mode=det["mode"],
             classification=det["classification"], confidence=det["confidence"],
             media_type="image", media_path=det["annotated_path"] or det["image_path"],
-            media_note=note, is_demo=bool(vid),
+            media_note=note, is_demo=bool(vid) or det["mode"] != "real_model",
             camera_id=f"demo_video:{vid}" if vid else None,
         )
 
@@ -495,7 +736,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if body.detection_id:
             db.link_detection(body.detection_id, row["id"])
         inc = to_incident(row)
-        notify(inc, background)
+        if not inc["is_demo"]:
+            notify(inc, background)
         return inc
 
     @app.patch("/incidents/{incident_id}/status", tags=["incidents"], response_model=Incident)
@@ -556,7 +798,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             db.link_detection(det_id, row["id"])
             incident_id = row["id"]
-            notify(to_incident(row), background)
+            # Heuristic/demo results remain visible in-app but never trigger emergency push alerts.
+            if not bool(row.get("is_demo")):
+                notify(to_incident(row), background)
             det = db.get_detection(det_id) or det
 
         res = to_detection_result(det)
@@ -694,7 +938,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 **incident_fields_from_detection(det),
             )
             db.link_detection(det_id, row["id"])
-            notify(to_incident(row), background)
+            # DEMO VIDEO events are intentionally not sent as fire push alerts.
             det = db.get_detection(det_id) or det
 
         return to_detection_result(det)
@@ -704,6 +948,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def register_device(body: DeviceIn):
         count = db.upsert_device(body.token, body.name, body.platform)
         return {"ok": True, "devices": count, "firebase": push.status()}
+
+    @app.post("/push/test", tags=["push"])
+    def test_push(body: DeviceIn):
+        if not push.is_enabled():
+            raise HTTPException(503, "Firebase не настроен на сервере")
+        if body.token not in db.device_tokens():
+            raise HTTPException(404, "Сначала зарегистрируйте это устройство")
+        result = push.send_incident_alert(
+            [body.token], "FireWatch — проверка уведомлений",
+            "Это тестовое уведомление. Тревоги о пожаре нет.", {"type": "test"},
+        )
+        db.delete_devices(result.pop("invalid_tokens", []))
+        # FCM acceptance is observable; actual iPhone delivery must be confirmed on-device.
+        return result
 
     # ---------------- simulation ----------------
     @app.post("/simulate_fire", tags=["demo"], response_model=Incident, status_code=201)
@@ -757,8 +1015,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             detection_mode="simulated", media_type=media_type, media_path=media_path,
             media_note=note, is_demo=True,
         )
+        # Simulated incidents are visible in-app but never trigger emergency push alerts.
         inc = to_incident(row)
-        notify(inc, background)
         return inc
 
     @app.get("/demo_samples/{kind}", tags=["demo"])
@@ -779,6 +1037,169 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         options = "".join(f'<option value="{c["id"]}">{c["name"]}</option>'
                           for c in load_cameras().values())
         return _PANEL_HTML.replace("{{OPTIONS}}", options)
+
+    def camera_monitoring_status() -> dict:
+        return {
+            "enabled": scanner_enabled,
+            "active": scanner_task is not None and not scanner_task.done(),
+            "interval_sec": settings.camera_auto_scan_interval_sec,
+            "last_error": scanner_last_error,
+            "last_run_at": scanner_last_run_at,
+            "current_camera": scanner_current_camera,
+            "detector_mode": detector.mode,
+            "ffmpeg_available": capture.ffmpeg_available(),
+            "cameras_configured": len(load_cameras()),
+            "confirmation_frames": settings.camera_confirmation_frames,
+            "min_confidence": settings.camera_alert_min_confidence,
+            "pending_confirmations": confirmations.pending(),
+            "metrics": dict(scanner_metrics),
+            "camera_results": dict(scanner_results),
+        }
+
+    def start_camera_auto_scan(*, require_cameras: bool) -> None:
+        nonlocal scanner_task, scanner_enabled, scanner_last_error
+        if detector.mode != "real_model":
+            raise HTTPException(409, "Автомониторинг доступен только при загруженной реальной YOLO-модели. Сейчас активен DEMO-режим.")
+        if not capture.ffmpeg_available():
+            raise HTTPException(503, "Для мониторинга камер установите FFmpeg на сервер.")
+        if require_cameras and not load_cameras():
+            raise HTTPException(409, "Сначала добавьте хотя бы одну камеру и проверьте её подключение.")
+        if scanner_task is not None and not scanner_task.done():
+            scanner_enabled = True
+            scanner_last_error = None
+            return
+        scanner_enabled = True
+        scanner_last_error = None
+        confirmations.clear()
+        scanner_results.clear()
+        scanner_task = asyncio.create_task(camera_auto_scan_loop())
+        log.warning("Camera auto-scan started: interval=%ss cameras=%s",
+                    settings.camera_auto_scan_interval_sec, len(load_cameras()))
+
+    async def stop_camera_auto_scan() -> None:
+        nonlocal scanner_task, scanner_enabled, scanner_current_camera
+        scanner_enabled = False
+        task = scanner_task
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            scanner_task = None
+        scanner_current_camera = None
+        confirmations.clear()
+        log.info("Camera auto-scan stopped")
+
+    async def scan_camera_once(camera_id: str, background: BackgroundTasks) -> None:
+        """Analyze one live frame; persist only new alerts or stronger evidence."""
+        cam = load_cameras().get(camera_id)
+        if not cam:
+            return
+        det_id = new_id("det")
+        rel = f"uploads/{det_id}_camera.jpg"
+        img_path = settings.media_dir / rel
+        try:
+            async with heavy_jobs:
+                await capture.grab_stream_frame(cam["url"], img_path, timeout=20)
+            db.upsert_camera_status(camera_id, status="online", last_error=None,
+                                    snapshot_path=None)
+            out, processing_ms = await run_inference(img_path, rel)
+        except capture.CaptureError as exc:
+            img_path.unlink(missing_ok=True)
+            db.upsert_camera_status(camera_id, status="offline", last_error=str(exc)[:300],
+                                    snapshot_path=None)
+            raise HTTPException(502, f"Не удалось получить кадр камеры: {exc}")
+        except (Exception, asyncio.CancelledError):
+            img_path.unlink(missing_ok=True)
+            raise
+
+        if not confirmations.observe(camera_id, out.classification, out.confidence):
+            img_path.unlink(missing_ok=True)
+            return
+        scanner_metrics["confirmed"] += 1
+
+        severity = severity_for(out.classification, out.confidence)
+        existing = db.find_active_camera_incident(camera_id, out.classification, detector.mode)
+        if existing:
+            old_confidence = float(existing.get("confidence") or 0.0)
+            order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+            old_severity = existing["severity"]
+            if out.confidence <= old_confidence and order[severity] <= order[old_severity]:
+                img_path.unlink(missing_ok=True)
+                return
+
+            det, ann_rel = await persist_detection(img_path, rel, det_id, out, processing_ms)
+            db.link_detection(det_id, existing["id"])
+            stronger_severity = severity if order[severity] > order[old_severity] else old_severity
+            updated = db.update_camera_incident_evidence(
+                existing["id"],
+                severity=stronger_severity,
+                confidence=max(old_confidence, out.confidence),
+                media_path=ann_rel or rel,
+                media_note="Обновлено по более уверенному кадру автоматического мониторинга. Требуется подтверждение оператором.",
+                detection_id=det_id,
+            )
+            if updated and order[stronger_severity] > order[old_severity]:
+                notify(to_incident(updated), background)
+            return
+
+        det, ann_rel = await persist_detection(img_path, rel, det_id, out, processing_ms)
+        cls_ru = {"fire": "огонь", "smoke": "дым", "fire_smoke": "огонь и дым"}
+        row = db.create_incident(
+            title=f"Камера «{cam['name']}»: обнаружены {cls_ru[out.classification]}",
+            description="Автоматический анализ видеопотока обнаружил признаки огня или дыма. Требуется обязательная проверка оператором.",
+            source="camera", camera_id=camera_id,
+            location_name=cam["name"], lat=cam["lat"], lon=cam["lon"],
+            severity=severity, classification=out.classification,
+            confidence=out.confidence, detection_mode=det["mode"],
+            media_type="image", media_path=ann_rel or rel,
+            media_note="Кадр из видеопотока, проанализированный реальной YOLO-моделью. Результат требует проверки человеком.",
+            is_demo=False, detection_id=det_id,
+        )
+        db.link_detection(det_id, row["id"])
+        notify(to_incident(row), background)
+
+    async def camera_auto_scan_loop() -> None:
+        """Периодически проверяет все разрешённые камеры реальной YOLO-моделью."""
+        nonlocal scanner_last_error, scanner_last_run_at, scanner_current_camera
+        while scanner_enabled:
+            cameras_snapshot = list(load_cameras().values())
+            for cam in cameras_snapshot:
+                if not scanner_enabled:
+                    return
+                scanner_current_camera = cam["name"]
+                scanner_metrics["attempted"] += 1
+                background = BackgroundTasks()
+                try:
+                    # Дедупликация выполняется при создании инцидента, поэтому сканируем
+                    # камеру и после тревоги: это позволяет заметить изменение smoke -> fire.
+                    await scan_camera_once(cam["id"], background)
+                    await background()
+                    scanner_last_error = None
+                    scanner_last_run_at = now_iso()
+                    scanner_metrics["succeeded"] += 1
+                    scanner_results[cam["id"]] = {"last_success_at": scanner_last_run_at, "error": None}
+                except HTTPException as exc:
+                    confirmations.reset(cam["id"])
+                    scanner_metrics["failed"] += 1
+                    scanner_results[cam["id"]] = {"error": str(exc.detail)[:300]}
+                    scanner_last_error = f"{cam['name']}: {exc.detail}"[:500]
+                    scanner_last_run_at = now_iso()
+                    log.warning("Auto-scan camera %s skipped: %s", cam["id"], exc.detail)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    confirmations.reset(cam["id"])
+                    scanner_metrics["failed"] += 1
+                    scanner_results[cam["id"]] = {"error": type(exc).__name__}
+                    scanner_last_error = f"{cam['name']}: {type(exc).__name__}"[:500]
+                    scanner_last_run_at = now_iso()
+                    log.exception("Auto-scan camera %s failed", cam["id"])
+                finally:
+                    scanner_current_camera = None
+            if scanner_enabled:
+                await asyncio.sleep(settings.camera_auto_scan_interval_sec)
 
     return app
 

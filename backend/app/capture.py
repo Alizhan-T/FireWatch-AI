@@ -6,6 +6,7 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 log = logging.getLogger("firewatch.capture")
 
@@ -26,12 +27,19 @@ async def _run(*cmd: str, timeout: float) -> tuple[int, str, str]:
         proc.kill()
         await proc.wait()
         raise CaptureError(f"{cmd[0]} timed out after {timeout}s")
+    except asyncio.CancelledError:
+        # Do not leave orphan FFmpeg/yt-dlp processes when monitoring is stopped.
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
     return proc.returncode or 0, out.decode(errors="ignore"), err.decode(errors="ignore")
 
 
 async def resolve_stream_url(url: str) -> str:
     """YouTube/Twitch страницу -> прямой HLS-URL. Остальное отдаём как есть."""
-    if not any(h in url for h in _RESOLVE_HOSTS):
+    host = (urlsplit(url).hostname or "").lower()
+    if not any(host == h or host.endswith("." + h) for h in _RESOLVE_HOSTS):
         return url
     if not shutil.which("yt-dlp"):
         raise CaptureError("yt-dlp не найден (pip install yt-dlp)")
@@ -40,7 +48,7 @@ async def resolve_stream_url(url: str) -> str:
     )
     lines = [l for l in out.splitlines() if l.strip()]
     if code != 0 or not lines:
-        raise CaptureError(f"yt-dlp не смог получить поток: {err.strip()[-300:]}")
+        raise CaptureError(f"yt-dlp не смог получить поток (exit {code})")
     return lines[0].strip()
 
 
@@ -50,22 +58,27 @@ async def record_clip(stream_url: str, output: Path, seconds: int) -> Path:
         raise CaptureError("ffmpeg не найден (brew install ffmpeg)")
 
     src = await resolve_stream_url(stream_url)
-    log.info("Recording %ss from %s", seconds, src[:120])
+    log.info("Recording %ss camera clip", seconds)
     tmp = output.with_suffix(".part.mp4")
-    code, _, err = await _run(
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", src,
-        "-t", str(seconds),
-        "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-        "-vf", "scale='min(1280,iw)':-2",
-        "-an",
-        "-movflags", "+faststart",
-        str(tmp),
-        timeout=seconds + 60,
-    )
+    extra = ["-rtsp_transport", "tcp"] if src.lower().startswith("rtsp") else []
+    try:
+        code, _, err = await _run(
+            "ffmpeg", "-y", "-loglevel", "error", *extra,
+            "-i", src,
+            "-t", str(seconds),
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-vf", "scale='min(1280,iw)':-2",
+            "-an",
+            "-movflags", "+faststart",
+            str(tmp),
+            timeout=seconds + 60,
+        )
+    except (CaptureError, asyncio.CancelledError):
+        tmp.unlink(missing_ok=True)
+        raise
     if code != 0 or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
-        raise CaptureError(f"ffmpeg failed: {err.strip()[-400:]}")
+        raise CaptureError(f"FFmpeg не смог записать поток (exit {code})")
     tmp.replace(output)
     return output
 
@@ -114,8 +127,8 @@ async def grab_stream_frame(stream_url: str, output_jpg: Path, timeout: float = 
     )
     if code != 0 or not output_jpg.exists() or output_jpg.stat().st_size == 0:
         output_jpg.unlink(missing_ok=True)
-        msg = (err.strip().splitlines() or ["поток недоступен"])[-1]
-        raise CaptureError(f"Поток недоступен: {msg[:200]}")
+        # FFmpeg stderr can contain the full RTSP credentials / signed HLS URL.
+        raise CaptureError(f"Поток недоступен (FFmpeg exit {code}); проверьте адрес и доступ с сервера")
     return output_jpg
 
 

@@ -1,0 +1,52 @@
+name: firewatch
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
+    environment:
+      ENV_MODE: production
+      DETECTOR: yolo
+      API_ACCESS_TOKEN: ${API_ACCESS_TOKEN:?Set API_ACCESS_TOKEN in .env.production}
+      PUBLIC_BASE_URL: https://${FIREWATCH_DOMAIN:?Set FIREWATCH_DOMAIN in .env.production}
+      CORS_ORIGINS: https://${FIREWATCH_DOMAIN}
+      DATABASE_PATH: /app/data/firewatch.db
+      MEDIA_DIR: /app/data/media
+      CAMERAS_FILE: /app/data/cameras.json
+      CAMERA_AUTO_SCAN_ENABLED: "true"
+      CAMERA_AUTO_SCAN_INTERVAL_SEC: ${CAMERA_AUTO_SCAN_INTERVAL_SEC:-30}
+      CAMERA_CONFIRMATION_FRAMES: ${CAMERA_CONFIRMATION_FRAMES:-3}
+      CAMERA_ALERT_MIN_CONFIDENCE: ${CAMERA_ALERT_MIN_CONFIDENCE:-0.5}
+      MAX_CONCURRENT_JOBS: "2"
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-}
+    volumes:
+      - firewatch_data:/app/data
+      - ./secrets:/run/secrets:ro
+    # Only Caddy can reach the API externally; no host port 8000 is published.
+    expose: ["8000"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      FIREWATCH_DOMAIN: ${FIREWATCH_DOMAIN:?Set FIREWATCH_DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+volumes:
+  firewatch_data:
+  caddy_data:
+  caddy_config:

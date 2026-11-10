@@ -8,6 +8,9 @@ def test_health(client):
     assert j["status"] == "ok" and j["database"] is True
     assert j["detector"]["mode"] == "demo_heuristic"
     assert j["firebase"] == "not_configured"
+    assert j["camera_auto_scan_enabled"] is False
+    assert j["camera_auto_scan_active"] is False
+    assert "/monitoring/status" in client.get("/openapi.json").json()["paths"]
 
 
 def test_docs_available(client):
@@ -15,7 +18,9 @@ def test_docs_available(client):
     spec = client.get("/openapi.json").json()
     for path in ["/health", "/cameras", "/incidents", "/incidents/{incident_id}",
                  "/detect", "/register_device", "/simulate_fire",
-                 "/incidents/{incident_id}/status"]:
+                 "/cameras/{camera_id}/analyze", "/incidents/{incident_id}/status",
+                 "/monitoring/status", "/monitoring/start", "/monitoring/stop",
+                 "/camera-candidates"]:
         assert path in spec["paths"], path
 
 
@@ -30,6 +35,15 @@ def test_cameras(client):
     r = client.get("/cameras")
     assert r.status_code == 200
     assert all({"id", "name", "lat", "lon"} <= c.keys() for c in r.json())
+    invalid_host = client.post("/cameras", json={
+        "name": "Invalid host", "url": "https://", "lat": 51.0, "lon": 71.0
+    })
+    assert invalid_host.status_code == 422
+    invalid_port = client.post("/cameras", json={
+        "name": "Invalid port", "url": "https://camera.example:bad/live.m3u8",
+        "lat": 51.0, "lon": 71.0
+    })
+    assert invalid_port.status_code == 422
 
 
 def test_create_get_list_incident(client):
@@ -118,10 +132,14 @@ def test_detect_and_save_incident(client, fire_jpg):
     assert inc.status_code == 201
     j = inc.json()
     assert j["source"] == "detection" and j["detection_mode"] == "demo_heuristic"
+    assert j["is_demo"] is True
     assert j["detection_id"] == det["id"] and j["media_type"] == "image"
 
 
-def test_detect_save_incident_flag(client, fire_jpg):
+def test_detect_save_incident_flag(client, fire_jpg, monkeypatch):
+    push_calls = []
+    monkeypatch.setattr("app.main.push.send_incident_alert",
+                        lambda *args, **kwargs: push_calls.append(args))
     r = client.post("/detect", data={"save_incident": "true", "lat": "51.0", "lon": "71.0"},
                     files={"file": ("fire.jpg", fire_jpg, "image/jpeg")})
     j = r.json()
@@ -129,6 +147,8 @@ def test_detect_save_incident_flag(client, fire_jpg):
     assert j["incident_id"]
     inc = client.get(f"/incidents/{j['incident_id']}").json()
     assert inc["lat"] == 51.0 and inc["source"] == "detection"
+    assert inc["is_demo"] is True
+    assert push_calls == []
 
 
 def test_network_info_and_cameras_crud(client, tmp_path, monkeypatch):
@@ -145,11 +165,13 @@ def test_network_info_and_cameras_crud(client, tmp_path, monkeypatch):
     assert client.get("/cameras").json() == []
     added = client.post("/cameras", json={
         "name": "Тестовая RTSP камера",
-        "url": "rtsp://192.168.1.50:554/stream1",
+        "url": "rtsp://camera-user:camera-pass@192.168.1.50:554/stream1",
         "lat": 43.25,
         "lon": 76.95,
     })
     assert added.status_code == 201
+    assert "camera-user" not in added.json()["url"]
+    assert "camera-pass" not in added.json()["url"]
     cam_id = added.json()["id"]
     assert len(client.get("/cameras").json()) == 1
 
@@ -289,3 +311,254 @@ def test_stats_breakdown_and_latest_detection(client, fire_jpg):
     assert st["latest_detection"] is not None
     assert "id" in st["latest_detection"] and "classification" in st["latest_detection"]
 
+
+
+def test_camera_frame_analysis_creates_reviewable_incident(client, tmp_path, monkeypatch, fire_jpg):
+    from app import capture
+
+    cam_file = tmp_path / "camera_analyze.json"
+    cam_file.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(client.app.state.settings, "cameras_file", cam_file)
+    added = client.post("/cameras", json={
+        "name": "Test public HLS camera",
+        "url": "https://camera.example/live.m3u8",
+        "lat": 43.25,
+        "lon": 76.95,
+    })
+    assert added.status_code == 201, added.text
+    camera = added.json()
+
+    async def fake_grab_stream_frame(stream_url, output_jpg, timeout=15):
+        output_jpg.parent.mkdir(parents=True, exist_ok=True)
+        output_jpg.write_bytes(fire_jpg)
+        return output_jpg
+
+    monkeypatch.setattr(capture, "grab_stream_frame", fake_grab_stream_frame)
+    response = client.post(f"/cameras/{camera['id']}/analyze")
+    assert response.status_code == 200, response.text
+    detection = response.json()
+    assert detection["status"] == "completed"
+    assert detection["mode"] == "demo_heuristic"
+    assert detection["incident_id"]
+
+    incident = client.get(f"/incidents/{detection['incident_id']}").json()
+    assert incident["source"] == "camera"
+    assert incident["camera_id"] == camera["id"]
+    assert incident["is_demo"] is True
+    assert incident["status"] == "new"
+
+    # An unresolved alert remains active even after ten minutes.
+    with client.app.state.db.conn() as connection:
+        connection.execute(
+            "UPDATE incidents SET created_at=? WHERE id=?",
+            ("2020-01-01T00:00:00+00:00", incident["id"]),
+        )
+
+    # Repeated detections from the same camera are linked to the existing active incident.
+    repeated = client.post(f"/cameras/{camera['id']}/analyze")
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["id"] != detection["id"]
+    assert repeated.json()["incident_id"] == detection["incident_id"]
+
+
+def test_optional_api_key_guard(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings()
+    settings.database_path = tmp_path / "secure.db"
+    settings.media_dir = tmp_path / "secure-media"
+    settings.demo_assets_dir = tmp_path / "demo_assets"
+    settings.cameras_file = tmp_path / "cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.detector = "heuristic"
+    settings.firebase_credentials = ""
+    settings.api_access_token = "test-secret-token"
+
+    with TestClient(create_app(settings)) as secure_client:
+        assert secure_client.get("/health").status_code == 401
+        assert secure_client.get("/stats").status_code == 401
+        headers = {"X-API-Key": "test-secret-token"}
+        assert secure_client.get("/health", headers=headers).status_code == 200
+        ok = secure_client.get("/stats", headers=headers)
+        assert ok.status_code == 200
+
+
+def test_auto_scan_requires_real_detector(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings()
+    settings.database_path = tmp_path / "auto-scan.db"
+    settings.media_dir = tmp_path / "auto-scan-media"
+    settings.demo_assets_dir = tmp_path / "demo_assets"
+    settings.cameras_file = tmp_path / "auto-scan-cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.detector = "heuristic"
+    settings.firebase_credentials = ""
+    settings.camera_auto_scan_enabled = True
+
+    with TestClient(create_app(settings)) as scan_client:
+        health = scan_client.get("/health").json()
+        assert health["camera_auto_scan_enabled"] is False
+        assert health["camera_auto_scan_active"] is False
+        assert "YOLO-модели" in health["camera_auto_scan_last_error"]
+        assert scan_client.post("/monitoring/start").status_code == 409
+
+
+def test_monitoring_is_blocked_without_real_model(client):
+    status = client.get("/monitoring/status")
+    assert status.status_code == 200
+    assert status.json()["active"] is False
+    start = client.post("/monitoring/start")
+    assert start.status_code == 409
+    assert "реальной YOLO-модели" in start.json()["detail"]
+    stop = client.post("/monitoring/stop")
+    assert stop.status_code == 200
+    assert stop.json()["active"] is False
+
+
+def test_monitoring_start_stop_with_real_model(tmp_path, monkeypatch, fire_jpg):
+    import time
+    from fastapi.testclient import TestClient
+    from app import capture, main
+    from app.config import Settings
+    from app.detection.base import DetectorOutput
+    from app.main import create_app
+
+    class FakeRealDetector:
+        mode = "real_model"
+        provider = "test-real-model"
+        model_name = "test-fire-model"
+        disclaimer = "Test model only."
+
+        def detect(self, image_path):
+            return DetectorOutput(False, False, 0.0, [])
+
+    settings = Settings()
+    settings.database_path = tmp_path / "monitoring.db"
+    settings.media_dir = tmp_path / "monitoring-media"
+    settings.demo_assets_dir = tmp_path / "demo-assets"
+    settings.cameras_file = tmp_path / "monitoring-cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.firebase_credentials = ""
+    settings.camera_auto_scan_enabled = False
+    settings.camera_auto_scan_interval_sec = 30
+
+    monkeypatch.setattr(main, "build_detector", lambda _: (FakeRealDetector(), None))
+    monkeypatch.setattr(capture, "ffmpeg_available", lambda: True)
+
+    async def fake_grab_stream_frame(stream_url, output_jpg, timeout=15):
+        output_jpg.parent.mkdir(parents=True, exist_ok=True)
+        output_jpg.write_bytes(fire_jpg)
+        return output_jpg
+
+    monkeypatch.setattr(capture, "grab_stream_frame", fake_grab_stream_frame)
+
+    with TestClient(create_app(settings)) as monitor_client:
+        added = monitor_client.post("/cameras", json={
+            "name": "Monitoring test camera",
+            "url": "https://camera.example/live.m3u8",
+            "lat": 51.1694,
+            "lon": 71.4491,
+        })
+        assert added.status_code == 201, added.text
+
+        started = monitor_client.post("/monitoring/start")
+        assert started.status_code == 200, started.text
+        assert started.json()["enabled"] is True
+        assert started.json()["active"] is True
+
+        deadline = time.monotonic() + 3
+        latest = monitor_client.get("/monitoring/status").json()
+        while latest["last_run_at"] is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+            latest = monitor_client.get("/monitoring/status").json()
+        assert latest["last_run_at"] is not None
+        assert latest["active"] is True
+        assert monitor_client.app.state.db.detection_stats()["total"] == 0
+        assert list((settings.media_dir / "uploads").glob("*_camera.jpg")) == []
+
+        stopped = monitor_client.post("/monitoring/stop")
+        assert stopped.status_code == 200
+        assert stopped.json()["enabled"] is False
+        assert stopped.json()["active"] is False
+
+
+def test_auto_monitoring_creates_one_incident_for_real_fire(tmp_path, monkeypatch, fire_jpg):
+    import time
+    from fastapi.testclient import TestClient
+    from app import capture, main
+    from app.config import Settings
+    from app.detection.base import BoxOut, DetectorOutput
+    from app.main import create_app
+
+    class FakeRealFireDetector:
+        mode = "real_model"
+        provider = "test-real-model"
+        model_name = "test-fire-model"
+        disclaimer = "Test model only."
+
+        def detect(self, image_path):
+            return DetectorOutput(
+                True, False, 0.91,
+                [BoxOut("fire", 0.91, 10, 10, 120, 120)],
+            )
+
+    settings = Settings()
+    settings.camera_confirmation_frames = 1
+    settings.database_path = tmp_path / "monitor-fire.db"
+    settings.media_dir = tmp_path / "monitor-fire-media"
+    settings.demo_assets_dir = tmp_path / "monitor-fire-demo"
+    settings.cameras_file = tmp_path / "monitor-fire-cameras.json"
+    settings.cameras_file.write_text("[]", encoding="utf-8")
+    settings.firebase_credentials = ""
+    settings.camera_auto_scan_enabled = False
+    settings.camera_auto_scan_interval_sec = 30
+
+    monkeypatch.setattr(main, "build_detector", lambda _: (FakeRealFireDetector(), None))
+    monkeypatch.setattr(capture, "ffmpeg_available", lambda: True)
+
+    async def fake_grab_stream_frame(stream_url, output_jpg, timeout=15):
+        output_jpg.parent.mkdir(parents=True, exist_ok=True)
+        output_jpg.write_bytes(fire_jpg)
+        return output_jpg
+
+    monkeypatch.setattr(capture, "grab_stream_frame", fake_grab_stream_frame)
+
+    with TestClient(create_app(settings)) as monitor_client:
+        added = monitor_client.post("/cameras", json={
+            "name": "Fire monitoring test camera",
+            "url": "https://camera.example/live.m3u8",
+            "lat": 51.1694,
+            "lon": 71.4491,
+        })
+        assert added.status_code == 201, added.text
+
+        started = monitor_client.post("/monitoring/start")
+        assert started.status_code == 200, started.text
+
+        deadline = time.monotonic() + 3
+        while monitor_client.app.state.db.incident_stats()["total"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        incidents = monitor_client.get("/incidents").json()
+        assert len(incidents) == 1
+        assert incidents[0]["source"] == "camera"
+        assert incidents[0]["is_demo"] is False
+        assert incidents[0]["severity"] == "high"
+        assert monitor_client.app.state.db.detection_stats()["total"] == 1
+
+        monitor_client.post("/monitoring/stop")
+
+
+def test_public_kazakhstan_camera_candidates_are_unverified_and_attributed(client):
+    response = client.get("/camera-candidates")
+    assert response.status_code == 200
+    candidates = response.json()
+    assert len(candidates) >= 5
+    assert all(item["verified"] is False for item in candidates)
+    assert all(item["source_url"] and item["catalog_url"] for item in candidates)
+    assert all(item["url"].startswith("https://") and ".m3u8" in item["url"] for item in candidates)

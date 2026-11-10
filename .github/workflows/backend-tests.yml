@@ -1,0 +1,105 @@
+name: Backend tests
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'compose.yaml'
+      - 'deploy/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'compose.yaml'
+      - 'deploy/**'
+      - '.github/workflows/backend-tests.yml'
+concurrency:
+  group: firewatch-backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install system media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install fastapi 'uvicorn[standard]' python-multipart pydantic python-dotenv pillow numpy pytest httpx firebase-admin -c requirements-server.txt
+      - name: Run backend tests
+        run: pytest -q
+  yolo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-server.txt
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+      - run: |
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt -c requirements-server.txt
+      - name: Require real YOLO (no skipped fallback)
+        run: python -c 'from app.config import Settings; from app.detection import build_detector; detector, _ = build_detector(Settings(detector="yolo")); assert detector.mode == "real_model"'
+      - run: pytest -q tests/test_detection.py tests/test_stream_pipeline.py
+      - name: Record fixture inference measurements
+        run: python tools/evaluate_model.py --manifest tests/fixtures/evaluation.csv --output reports/model.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yolo-fixture-measurements
+          path: backend/reports/model.json
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose and Caddy
+        env:
+          FIREWATCH_DOMAIN: firewatch.example.com
+          API_ACCESS_TOKEN: ci-test-key-is-not-a-real-secret-12345678
+        run: |
+          mkdir -p secrets
+          docker compose config --quiet
+          docker run --rm -e FIREWATCH_DOMAIN -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Build and smoke test production container
+        run: |
+          docker build -t firewatch-test backend
+          docker run -d --name firewatch-smoke -e ENV_MODE=production -e DETECTOR=yolo \
+            -e API_ACCESS_TOKEN=ci-test-key-is-not-a-real-secret-12345678 \
+            -e PUBLIC_BASE_URL=https://firewatch.example.com -e CAMERA_AUTO_SCAN_ENABLED=true \
+            -e CAMERAS_FILE=/app/data/cameras.json firewatch-test
+          for attempt in $(seq 1 60); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' firewatch-smoke)
+            if [ "$state" = healthy ]; then break; fi
+            sleep 2
+          done
+          test "$state" = healthy
+          docker exec firewatch-smoke python -c '
+          import httpx
+          c = httpx.Client(base_url="http://127.0.0.1:8000")
+          assert c.get("/health").status_code == 401
+          c.headers["X-API-Key"] = "ci-test-key-is-not-a-real-secret-12345678"
+          assert c.get("/health").json()["detector"]["mode"] == "real_model"
+          ready = c.get("/ready")
+          assert ready.status_code == 503 and "no_cameras" in ready.json()["reasons"]
+          '
+      - name: Container logs
+        if: always()
+        run: docker logs firewatch-smoke || true

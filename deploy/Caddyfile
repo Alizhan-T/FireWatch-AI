@@ -1,0 +1,11 @@
+{$FIREWATCH_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 210MB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+    reverse_proxy backend:8000
+}

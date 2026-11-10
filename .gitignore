@@ -1,6 +1,11 @@
 # Python
 backend/.venv/
 backend/.env
+.env.production
+secrets/
+backend/reports/
+FireWatchNative/*.xcodeproj/
+FireWatchNative/FireWatchNative.entitlements
 backend/data/
 backend/media/
 backend/static/clips/
@@ -9,17 +14,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Flutter
-mobile/.dart_tool/
-mobile/build/
-mobile/.flutter-plugins*
-mobile/ios/Pods/
-mobile/ios/.symlinks/
-mobile/ios/Flutter/ephemeral/
-mobile/macos/Flutter/ephemeral/
-mobile/linux/flutter/ephemeral/
-mobile/windows/flutter/ephemeral/
-mobile/ios/Runner/GoogleService-Info.plist
+# Native iOS private Firebase config
+FireWatchNative/FireWatchNative/GoogleService-Info.plist
 
 # Node / IDE
 .idea/

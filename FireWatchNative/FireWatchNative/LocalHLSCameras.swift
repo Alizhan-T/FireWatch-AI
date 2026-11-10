@@ -27,9 +27,11 @@ enum LocalHLSCameraError: LocalizedError {
 final class LocalHLSCameraStore: ObservableObject {
     @Published private(set) var cameras: [LocalHLSCamera] = []
     private let storageKey = "firewatch.localHLSCameras.v1"
+    private let defaults: UserDefaults
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([LocalHLSCamera].self, from: data) {
             cameras = saved
         }
@@ -60,7 +62,7 @@ final class LocalHLSCameraStore: ObservableObject {
 
     private func persist() {
         if let data = try? JSONEncoder().encode(cameras) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: storageKey)
         }
     }
 }

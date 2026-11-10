@@ -173,6 +173,19 @@ struct DetectionView: View {
                                 .font(.footnote).foregroundStyle(.secondary)
                             Text("Обработка: \(result.processing_ms) мс")
                                 .font(.caption).foregroundStyle(.secondary)
+                            if let boxes = result.boxes, !boxes.isEmpty {
+                                Text("Выделено областей: \(boxes.count)")
+                                    .font(.footnote.bold())
+                                ForEach(boxes.indices, id: \.self) { index in
+                                    let object = boxes[index]
+                                    let name = object.label == "fire" ? "Огонь" :
+                                        (object.label == "smoke" ? "Дым" : "Неизвестный класс")
+                                    Text(result.mode == "real_model" ?
+                                         "\(name) · score \(Int((object.confidence * 100).rounded()))%" :
+                                         "\(name) · цветовое совпадение (DEMO)")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                             Text(AIFireAssessment.action(for: result.classification, mode: result.mode))
                                 .font(.footnote)
                             Text(result.disclaimer).font(.caption).foregroundStyle(.secondary)

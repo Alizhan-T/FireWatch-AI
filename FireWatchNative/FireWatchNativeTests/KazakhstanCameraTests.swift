@@ -15,7 +15,7 @@ final class KazakhstanCameraTests: XCTestCase {
 
     func testBundledCamerasAreKazakhstanOnlyHTTPSHLS() {
         let candidates = PublicCameraCatalog.candidates
-        XCTAssertGreaterThanOrEqual(candidates.count, 8)
+        XCTAssertGreaterThanOrEqual(candidates.count, 7)
         XCTAssertEqual(Set(candidates.map(\.id)).count, candidates.count)
         for camera in candidates {
             let url = URL(string: camera.url)

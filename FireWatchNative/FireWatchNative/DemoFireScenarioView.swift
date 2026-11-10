@@ -22,6 +22,8 @@ struct DemoFireScenarioView: View {
     @State private var fireScale = 0.65
     @State private var fireVerticalPosition = 0.88
     @State private var showSourceBrowser = false
+    @State private var publisherLoading = true
+    @State private var publisherError: String?
     @State private var notificationStatus = "Тестовые уведомления не отправляются службам спасения."
     @State private var didRequestNotification = false
     @Environment(\.dismiss) private var dismiss
@@ -57,15 +59,14 @@ struct DemoFireScenarioView: View {
                 publisherPageURL: nil
             )
         }
-        let publishedVideo = KazakhstanPublisherCameras.candidates.compactMap { camera -> TrainingCameraOption? in
-            guard let videoID = camera.youtubeVideoID else { return nil }
-            return TrainingCameraOption(
+        let publishedVideo = KazakhstanPublisherCameras.candidates.map { camera in
+            TrainingCameraOption(
                 id: "publisher.\(camera.id)",
                 title: camera.name,
                 city: camera.city.name,
                 cityID: camera.cityID,
                 streamURL: nil,
-                youtubeID: videoID,
+                youtubeID: camera.youtubeVideoID,
                 publisherPageURL: camera.pageURL
             )
         }
@@ -130,6 +131,12 @@ struct DemoFireScenarioView: View {
                                     EmbeddedYouTubePlayer(videoID: videoID)
                                         .frame(height: 250)
                                         .id(camera.id)
+                                } else if let pageURL = camera.publisherPageURL {
+                                    InAppPublisherPage(url: pageURL,
+                                                       isLoading: $publisherLoading,
+                                                       errorMessage: $publisherError)
+                                        .frame(height: 250)
+                                        .id(camera.id)
                                 } else {
                                     ContentUnavailableView("Нет встроенного видео",
                                         systemImage: "video.slash",
@@ -139,7 +146,7 @@ struct DemoFireScenarioView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 250)
                             .overlay {
-                                if showFireEffect {
+                                if showFireEffect && (camera.streamURL != nil || camera.youtubeID != nil) {
                                     GeometryReader { geometry in
                                         // AVPlayer letterboxes landscape feeds. Keep
                                         // fire on visible video, not the black bars.
@@ -174,6 +181,15 @@ struct DemoFireScenarioView: View {
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
 
+                            if camera.streamURL == nil && camera.youtubeID == nil {
+                                Label("Это страница оператора, а не прямое видео. VFX здесь отключён: нельзя накладывать огонь на интерфейс сайта.",
+                                      systemImage: "info.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let publisherError {
+                                    Text(publisherError).font(.caption).foregroundStyle(.orange)
+                                }
+                            }
                             if let sourceURL = camera.publisherPageURL {
                                 Button {
                                     showSourceBrowser = true

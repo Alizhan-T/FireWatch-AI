@@ -31,8 +31,9 @@ final class LocalEventStore: ObservableObject {
         }
     }
 
+    @discardableResult
     func create(title: String, details: String, cityID: String, kind: String,
-                severity: String, simulation: Bool) {
+                severity: String, simulation: Bool) -> LocalFireEvent {
         let city = KazakhstanCities.find(cityID)
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let event = LocalFireEvent(
@@ -48,6 +49,7 @@ final class LocalEventStore: ObservableObject {
         )
         events.insert(event, at: 0)
         save()
+        return event
     }
 
     func setResolved(_ event: LocalFireEvent, _ done: Bool) {
@@ -114,6 +116,17 @@ struct LocalEventDetailView: View {
             if !event.details.isEmpty {
                 Section("Описание") { Text(event.details) }
             }
+            if event.isSimulation {
+                Section("Тренировочный сценарий") {
+                    NavigationLink {
+                        DemoFireScenarioView(event: event)
+                    } label: {
+                        Label("Открыть DEMO с камерой и эффектом огня", systemImage: "video.badge.waveform")
+                    }
+                    Text("Все эффекты искусственные. SOS можно повторно отправить только на этот iPhone.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section("Управление") {
                 Button(event.resolved ? "Вернуть в активные" : "Отметить закрытым") {
                     store.setResolved(event, !event.resolved)
@@ -140,6 +153,7 @@ struct CreateLocalEventView: View {
     @State private var kind = "Огонь"
     @State private var severity = "Средняя"
     @State private var isSimulation = false
+    @State private var createdDemo: LocalFireEvent?
 
     var body: some View {
         NavigationStack {
@@ -182,15 +196,31 @@ struct CreateLocalEventView: View {
                     Button("Отмена") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") {
-                        store.create(title: title, details: details, cityID: cityID,
-                                     kind: kind, severity: severity, simulation: isSimulation)
-                        dismiss()
+                    Button(isSimulation ? "Запустить DEMO" : "Сохранить") {
+                        let event = store.create(title: title, details: details, cityID: cityID,
+                                                 kind: kind, severity: severity, simulation: isSimulation)
+                        if isSimulation {
+                            createdDemo = event
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
             }
         }
         .onAppear { isSimulation = startsAsSimulation }
+        .fullScreenCover(item: $createdDemo) { event in
+            NavigationStack {
+                DemoFireScenarioView(
+                    event: event,
+                    notifyAtStart: true,
+                    onClose: {
+                        createdDemo = nil
+                        dismiss()
+                    }
+                )
+            }
+        }
     }
 }
 

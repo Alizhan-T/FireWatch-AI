@@ -59,6 +59,8 @@ enum KazakhstanPublisherCameras {
 /// its protected stream. Video playback may still depend on website policies.
 private struct InAppPublisherPage: UIViewRepresentable {
     let url: URL
+    @Binding var isLoading: Bool
+    @Binding var errorMessage: String?
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -71,7 +73,9 @@ private struct InAppPublisherPage: UIViewRepresentable {
         return view
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(startURL: url) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(startURL: url, isLoading: $isLoading, errorMessage: $errorMessage)
+    }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
@@ -81,7 +85,33 @@ private struct InAppPublisherPage: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         let startURL: URL
-        init(startURL: URL) { self.startURL = startURL }
+        let isLoading: Binding<Bool>
+        let errorMessage: Binding<String?>
+
+        init(startURL: URL, isLoading: Binding<Bool>, errorMessage: Binding<String?>) {
+            self.startURL = startURL
+            self.isLoading = isLoading
+            self.errorMessage = errorMessage
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            isLoading.wrappedValue = true
+            errorMessage.wrappedValue = nil
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isLoading.wrappedValue = false
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            isLoading.wrappedValue = false
+            errorMessage.wrappedValue = "Источник не загрузился: \(error.localizedDescription)"
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            isLoading.wrappedValue = false
+            errorMessage.wrappedValue = "Не удалось подключиться: \(error.localizedDescription)"
+        }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -102,6 +132,8 @@ private struct InAppPublisherPage: UIViewRepresentable {
                 "player.vimeo.com", "shymbulak.com", "www.shymbulak.com"
             ]
             guard destination.scheme == "https", trusted.contains(host) else {
+                errorMessage.wrappedValue = "Видеоплеер запросил внешний переход, который недоступен внутри приложения."
+                isLoading.wrappedValue = false
                 decisionHandler(.cancel)
                 return
             }
@@ -113,6 +145,8 @@ private struct InAppPublisherPage: UIViewRepresentable {
 struct PublisherCameraDetailView: View {
     let camera: PublishedWebCamera
     @State private var reloadID = UUID()
+    @State private var pageLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         ScrollView {
@@ -121,12 +155,22 @@ struct PublisherCameraDetailView: View {
                     .font(.title3.bold())
                 if let videoID = camera.youtubeVideoID {
                     EmbeddedYouTubePlayer(videoID: videoID)
+                        .id(reloadID)
                         .frame(height: 270)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
-                    InAppPublisherPage(url: camera.pageURL)
+                    InAppPublisherPage(url: camera.pageURL,
+                                       isLoading: $pageLoading,
+                                       errorMessage: $loadError)
                         .id(reloadID)
                         .frame(height: 380)
+                    if pageLoading {
+                        ProgressView("Подключаем страницу оператора…")
+                    }
+                    if let loadError {
+                        Label(loadError, systemImage: "wifi.exclamationmark")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 Label("Публикация оператора · статус LIVE не гарантирован", systemImage: "video")
@@ -135,6 +179,8 @@ struct PublisherCameraDetailView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
                 Button {
+                    loadError = nil
+                    pageLoading = true
                     reloadID = UUID()
                 } label: {
                     Label("Повторить загрузку источника", systemImage: "arrow.clockwise")

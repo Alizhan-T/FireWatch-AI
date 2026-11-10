@@ -204,8 +204,7 @@ private struct AddCameraView: View {
     @ObservedObject var api: API
     @State private var name = ""
     @State private var url = ""
-    @State private var lat = "51.1694"
-    @State private var lon = "71.4491"
+    @State private var cityID = "semey"
     @State private var saving = false
     @State private var error: String?
 
@@ -217,9 +216,14 @@ private struct AddCameraView: View {
                     TextField("https://.../index.m3u8 или rtsp://...", text: $url)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 }
-                Section("Местоположение") {
-                    TextField("Широта", text: $lat).keyboardType(.numbersAndPunctuation)
-                    TextField("Долгота", text: $lon).keyboardType(.numbersAndPunctuation)
+                Section("Город") {
+                    Picker("Город Казахстана", selection: $cityID) {
+                        ForEach(KazakhstanCities.all) { city in
+                            Text(city.name).tag(city.id)
+                        }
+                    }
+                    Text("Координаты камеры будут ориентировочно указаны как центр города. Для точного лесного мониторинга позже потребуется реальное местоположение объектива.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Добавление не подтверждает работоспособность потока. После сохранения проверьте его через FFmpeg. Для RTSP нужен запущенный FFmpeg на сервере.")
@@ -232,23 +236,21 @@ private struct AddCameraView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(saving ? "Сохранение..." : "Добавить") {
-                        guard let latitude = Double(lat.replacingOccurrences(of: ",", with: ".")),
-                              let longitude = Double(lon.replacingOccurrences(of: ",", with: ".")),
-                              (-90...90).contains(latitude), (-180...180).contains(longitude),
-                              let parsedURL = URL(string: url),
+                        guard let parsedURL = URL(string: url),
                               let scheme = parsedURL.scheme?.lowercased(),
                               ["http", "https", "rtsp", "rtsps"].contains(scheme),
                               parsedURL.host != nil,
                               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                            error = "Проверьте название, полный URL и координаты."
+                            error = "Проверьте название и полный URL камеры."
                             return
                         }
                         saving = true
                         Task {
                             do {
+                                let city = KazakhstanCities.find(cityID)
                                 _ = try await api.addCamera(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                                         streamURL: url.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                        lat: latitude, lon: longitude)
+                                                        lat: city.lat, lon: city.lon)
                                 dismiss()
                             } catch {
                                 self.error = error.localizedDescription

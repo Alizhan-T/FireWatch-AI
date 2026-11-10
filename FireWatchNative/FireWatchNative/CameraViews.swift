@@ -162,7 +162,12 @@ struct CameraLibraryView: View {
                         NavigationLink {
                             LocalHLSCameraDetailView(camera: camera)
                         } label: {
-                            Label(camera.name, systemImage: "video.fill")
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label(camera.name, systemImage: "video.fill")
+                                Text("\(camera.cityTitle) · личная HLS-ссылка · статус проверится при открытии")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .onDelete { indices in
@@ -173,7 +178,7 @@ struct CameraLibraryView: View {
                     Button {
                         showingLocalAdd = true
                     } label: {
-                        Label("Добавить прямой HLS-поток", systemImage: "plus.circle")
+                        Label("Подключить мою HLS-камеру Астаны или другого города", systemImage: "plus.circle")
                     }
                 }
                 if api.isConnected {

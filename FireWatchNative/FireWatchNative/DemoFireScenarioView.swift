@@ -20,6 +20,7 @@ struct DemoFireScenarioView: View {
     @State private var showFireEffect = true
     @State private var fireHorizontalPosition = 0.58
     @State private var fireScale = 0.65
+    @State private var fireVerticalPosition = 0.88
     @State private var showSourceBrowser = false
     @State private var notificationStatus = "Тестовые уведомления не отправляются службам спасения."
     @State private var didRequestNotification = false
@@ -140,13 +141,24 @@ struct DemoFireScenarioView: View {
                             .overlay {
                                 if showFireEffect {
                                     GeometryReader { geometry in
+                                        // AVPlayer letterboxes landscape feeds. Keep
+                                        // fire on visible video, not the black bars.
+                                        let videoHeight = min(geometry.size.height,
+                                                              geometry.size.width * 9 / 16)
+                                        let topInset = (geometry.size.height - videoHeight) / 2
+                                        let baseline = topInset + videoHeight * CGFloat(fireVerticalPosition)
                                         RealisticFireOverlay()
-                                            .scaleEffect(fireScale)
+                                            .scaleEffect(CGFloat(fireScale))
                                             .position(
-                                                x: geometry.size.width * fireHorizontalPosition,
-                                                // Place base of the flame ~12 points above video bottom.
-                                                y: geometry.size.height - 12 - 117 * fireScale
+                                                x: geometry.size.width * CGFloat(fireHorizontalPosition),
+                                                y: baseline - 117 * CGFloat(fireScale)
                                             )
+                                            .mask {
+                                                Rectangle()
+                                                    .frame(width: geometry.size.width, height: videoHeight)
+                                                    .position(x: geometry.size.width / 2,
+                                                              y: geometry.size.height / 2)
+                                            }
                                     }
                                     .allowsHitTesting(false)
                                 }
@@ -189,6 +201,10 @@ struct DemoFireScenarioView: View {
                             Text("Положение огня по горизонтали")
                                 .font(.caption.bold())
                             Slider(value: $fireHorizontalPosition, in: 0.22...0.78)
+                                .tint(.orange)
+                            Text("Высота огня на изображении")
+                                .font(.caption.bold())
+                            Slider(value: $fireVerticalPosition, in: 0.60...0.94)
                                 .tint(.orange)
                             Text("Размер эффекта")
                                 .font(.caption.bold())

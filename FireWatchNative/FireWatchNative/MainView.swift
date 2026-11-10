@@ -76,7 +76,7 @@ struct MainView: View {
                     }
                     HStack(spacing: 8) {
                         Circle().fill(api.isConnected ? .green : .orange).frame(width: 8, height: 8)
-                        Text(api.isConnected ? "Сервер подключён" : "Нет подключения к серверу")
+                        Text(api.isConnected ? "AI-сервер подключён" : "Просмотр камер без сервера")
                             .font(.caption.bold())
                         Spacer()
                         if let last = api.lastSuccessfulSync {
@@ -85,6 +85,30 @@ struct MainView: View {
                     }
                     .padding(12)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    if !api.isConnected {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Режим прямого просмотра", systemImage: "video.fill")
+                                .font(.headline)
+                            Text("Открывайте публичные HLS-камеры и сохраняйте собственные ссылки прямо на iPhone. Сервер FireWatch не требуется.")
+                                .font(.subheadline)
+                            Text("AI-анализ, автоматическое обнаружение пожара и удалённые push-уведомления пока работают только с отдельным backend.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let error = api.error, !api.baseURL.isEmpty {
+                                Text("Дополнительный AI-сервер недоступен: \(error)")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
+                            Button {
+                                selectedTab = 3
+                            } label: {
+                                Label("Перейти к онлайн-камерам", systemImage: "play.rectangle.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                    } else {
                     if let error = api.error {
                         Label(error, systemImage: "wifi.exclamationmark")
                             .font(.footnote).foregroundStyle(.orange)
@@ -132,6 +156,7 @@ struct MainView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    }
                 }
                 .padding()
             }
@@ -170,8 +195,21 @@ struct MainView: View {
                            coordinate: CLLocationCoordinate2D(latitude: camera.lat, longitude: camera.lon))
                         .tint(.blue)
                 }
+                // Public catalogue pins remain visible without the optional backend.
+                ForEach(PublicCameraCatalog.candidates) { candidate in
+                    Marker(candidate.name, systemImage: "video",
+                           coordinate: CLLocationCoordinate2D(latitude: candidate.lat, longitude: candidate.lon))
+                        .tint(.teal)
+                }
             }
             .mapStyle(.standard(elevation: .realistic))
+            .safeAreaInset(edge: .top) {
+                Text("Бирюзовые точки — публичный каталог; доступность потоков не проверена.")
+                    .font(.caption2)
+                    .padding(10)
+                    .frame(maxWidth: .infinity)
+                    .background(.regularMaterial)
+            }
             .navigationTitle("Карта")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -228,6 +266,14 @@ struct MainView: View {
                     }
                     if let error = api.error {
                         Text(error).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                Section("Без сервера") {
+                    Text("Просмотр публичных и сохранённых HLS-камер работает напрямую на iPhone. Сервер нужен только для существующего удалённого YOLO-анализа, журнала инцидентов и push.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Использовать только iPhone") {
+                        api.useWithoutServer()
+                        showSettings = false
                     }
                 }
                 Section("Push-уведомления") {
@@ -328,7 +374,7 @@ struct MainView: View {
                 }
                 Section("Важно") {
                     Text("Для физического iPhone укажите LAN-IP Mac, например http://192.168.1.20:8000. localhost и 127.0.0.1 на телефоне указывают на сам телефон.")
-                    Text("Для работы с мобильной сетью и удалённым доступом настройте HTTPS и защиту API. Не публикуйте сервер без авторизации.")
+                    Text("Просмотр HLS-камер через интернет не требует FireWatch-сервера. Для будущего удалённого AI-мониторинга используйте HTTPS и авторизацию.")
                 }
             }
             .navigationTitle("Настройки")

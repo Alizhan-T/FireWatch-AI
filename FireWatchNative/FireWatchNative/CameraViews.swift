@@ -220,12 +220,20 @@ struct CameraLibraryView: View {
 
 struct PublicCameraDetailView: View {
     let candidate: CameraCandidate
+    @State private var showDemoScanner = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let url = URL(string: candidate.url) {
-                    DirectHLSPlayer(url: url)
+                    DirectHLSPlayer(url: url, showDemoScanner: showDemoScanner)
+                    Toggle("Зелёный сканер (DEMO)", isOn: $showDemoScanner)
+                        .tint(.green)
+                    if showDemoScanner {
+                        Text("Сканирующая линия анимирована. Реальный анализ видеокадров в этом режиме не выполняется.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     ContentUnavailableView("Ссылка на поток недействительна",
                         systemImage: "video.slash",

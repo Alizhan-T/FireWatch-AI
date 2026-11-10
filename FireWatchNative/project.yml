@@ -26,7 +26,7 @@ targets:
       - path: FireWatchNative
     preBuildScripts:
       - name: Generate minimalist FireWatch AppIcon
-        script: swift "$SRCROOT/tools/generate_app_icon.swift"
+        script: SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" xcrun --sdk macosx swift "$SRCROOT/tools/generate_app_icon.swift"
         basedOnDependencyAnalysis: false
     info:
       path: Info.plist

@@ -164,6 +164,7 @@ struct PublisherCameraDetailView: View {
                                        errorMessage: $loadError)
                         .id(reloadID)
                         .frame(height: 380)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
                     if pageLoading {
                         ProgressView("Подключаем страницу оператора…")
                     }
@@ -171,7 +172,6 @@ struct PublisherCameraDetailView: View {
                         Label(loadError, systemImage: "wifi.exclamationmark")
                             .font(.footnote).foregroundStyle(.orange)
                     }
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 Label("Публикация оператора · статус LIVE не гарантирован", systemImage: "video")
                     .font(.subheadline)

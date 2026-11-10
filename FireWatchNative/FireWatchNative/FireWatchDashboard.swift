@@ -123,7 +123,7 @@ struct FireWatchDashboard: View {
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Публичные видеопотоки Казахстана и ваши события — в одном приложении.")
+                Text("Потоки HLS, страницы камер Казахстана и ваши события — в одном приложении.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.75))
             }
@@ -162,7 +162,7 @@ struct FireWatchDashboard: View {
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeading("Сводка", subtitle: "Только подтверждённые данные")
+            sectionHeading("Сводка", subtitle: "Каталог источников и ручные события")
             HStack(spacing: 12) {
                 statistic(
                     title: "Источники камер",

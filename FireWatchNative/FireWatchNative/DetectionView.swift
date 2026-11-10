@@ -11,6 +11,9 @@ struct DetectionView: View {
     @State private var saveIncident = false
     @State private var cityID = "semey"
     @State private var error: String?
+    @State private var localResult: OnDeviceFireResult?
+    @State private var localError: String?
+    @State private var localAnalyzing = false
 
     var body: some View {
         NavigationStack {
@@ -38,12 +41,51 @@ struct DetectionView: View {
                             if let data = try? await item?.loadTransferable(type: Data.self) {
                                 image = UIImage(data: data)
                                 result = nil; error = nil
+                                localResult = nil; localError = nil
                             }
                         }
                     }
                     if let image {
                         Image(uiImage: image).resizable().scaledToFit()
                             .frame(maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 16))
+                        Section {
+                            if OnDeviceFireDetector.isInstalled {
+                                Button(localAnalyzing ? "Проверяем на iPhone…" : "Проверить локально через Core ML") {
+                                    localAnalyzing = true
+                                    localResult = nil
+                                    Task {
+                                        defer { localAnalyzing = false }
+                                        do {
+                                            localResult = try await OnDeviceFireDetector.analyze(image)
+                                            localError = nil
+                                        } catch {
+                                            localError = error.localizedDescription
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(localAnalyzing)
+                            } else {
+                                Label("Локальная модель Core ML ещё не установлена. Можно добавить экспортированную модель или подключить AI-сервер.",
+                                      systemImage: "cpu")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if let localResult {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Label("Результат Core ML: \(localResult.classification)",
+                                          systemImage: "cpu.fill")
+                                        .font(.headline)
+                                    Text("Уверенность: \(Int(localResult.confidence * 100))% · объектов: \(localResult.objectCount)")
+                                    Text("Одиночное фото, порог 65%. Результат предварительный и требует подтверждения человеком. DEMO-событие отдельно создаётся во вкладке «События».")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding()
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                            }
+                            if let localError {
+                                Text(localError).font(.caption).foregroundStyle(.orange)
+                            }
+                        }
                         Toggle("Создать инцидент при обнаружении огня/дыма", isOn: $saveIncident)
                         if saveIncident {
                             Picker("Город Казахстана", selection: $cityID) {

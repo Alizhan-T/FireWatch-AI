@@ -10,6 +10,17 @@ enum DemoSOSCategory {
 /// No APNs/Firebase credentials, no backend, no 112 call and no real SOS dispatch.
 @MainActor
 enum DemoSOSNotifications {
+    static func content(for event: LocalFireEvent) -> UNMutableNotificationContent? {
+        guard event.isSimulation else { return nil }
+        let content = UNMutableNotificationContent()
+        content.title = "SOS · ДЕМО · УЧЕБНАЯ ТРЕВОГА"
+        content.body = "Симуляция: \(event.kind.lowercased()) · \(event.city.name). Это не реальный пожар. Никто не вызван."
+        content.sound = .default
+        content.categoryIdentifier = DemoSOSCategory.identifier
+        content.userInfo = ["firewatch_demo": true, "event_id": event.id.uuidString]
+        return content
+    }
+
     static func schedule(for event: LocalFireEvent) async -> String {
         guard event.isSimulation else {
             return "Уведомление SOS доступно только в учебном DEMO-режиме."
@@ -25,12 +36,9 @@ enum DemoSOSNotifications {
             guard allowed else {
                 return "Уведомления отключены. Разрешите их для FireWatch AI в настройках iPhone, чтобы получать DEMO SOS."
             }
-            let content = UNMutableNotificationContent()
-            content.title = "SOS · ДЕМО · УЧЕБНАЯ ТРЕВОГА"
-            content.body = "Симуляция: \(event.kind.lowercased()) · \(event.city.name). Это не реальный пожар. Никто не вызван."
-            content.sound = .default
-            content.categoryIdentifier = DemoSOSCategory.identifier
-            content.userInfo = ["firewatch_demo": true, "event_id": event.id.uuidString]
+            guard let content = content(for: event) else {
+                return "Нельзя отправить SOS для реального события без подтверждения."
+            }
             let request = UNNotificationRequest(
                 identifier: "firewatch.demo.\(event.id.uuidString).\(UUID().uuidString)",
                 content: content,

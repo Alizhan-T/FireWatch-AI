@@ -33,7 +33,7 @@ enum OnDeviceFireError: LocalizedError {
         case .unsupportedOutputs:
             return "Core ML вернул неподдерживаемый тип данных. Требуется YOLO-экспорт с nms=True, совместимый с Vision."
         case .unsupportedLabels:
-            return "Модель должна возвращать названия классов fire и smoke. Номера 0/1 без явного сопоставления нельзя интерпретировать: можно перепутать огонь и дым."
+            return "Неизвестные классы модели. Для числовых 0/1 нужен файл сопоставления, экспортированный вместе с обученной моделью — FireWatch не угадывает, где огонь, а где дым."
         }
     }
 }
@@ -55,6 +55,7 @@ enum OnDeviceFireDetector {
             throw OnDeviceFireError.invalidImage
         }
         let orientation = cgOrientation(for: image.imageOrientation)
+        let labelsByID = bundledLabels()
         return try await Task.detached(priority: .userInitiated) {
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
@@ -77,11 +78,13 @@ enum OnDeviceFireDetector {
 
             for observation in observations {
                 guard let label = observation.labels.first else { continue }
-                let key = label.identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                // D-Fire exports may order numeric labels differently. Never guess.
+                // If Vision returns numeric class IDs, use the metadata written
+                // by our exporter from the checkpoint's actual class order.
+                guard let key = resolvedLabel(label.identifier, labelsByID: labelsByID) else {
+                    throw OnDeviceFireError.unsupportedLabels
+                }
                 let fireLabel = key == "fire"
                 let smokeLabel = key == "smoke"
-                guard fireLabel || smokeLabel else { throw OnDeviceFireError.unsupportedLabels }
                 guard label.confidence >= 0.65 else { continue }
                 accepted += 1
                 highest = max(highest, label.confidence)
@@ -97,6 +100,23 @@ enum OnDeviceFireDetector {
                 modelName: modelName
             )
         }.value
+    }
+
+    static func resolvedLabel(_ identifier: String, labelsByID: [String: String]) -> String? {
+        let key = identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key == "fire" || key == "smoke" { return key }
+        guard let mapped = labelsByID[key] else { return nil }
+        return (mapped == "fire" || mapped == "smoke") ? mapped : nil
+    }
+
+    private static func bundledLabels() -> [String: String] {
+        guard let url = Bundle.main.url(forResource: "fire_smoke_yolov8n_labels", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let mapping = try? JSONDecoder().decode([String: String].self, from: data),
+              Set(mapping.values) == Set(["fire", "smoke"]) else {
+            return [:]
+        }
+        return mapping
     }
 
     /// UIImage and Vision use different orientation enumerations.

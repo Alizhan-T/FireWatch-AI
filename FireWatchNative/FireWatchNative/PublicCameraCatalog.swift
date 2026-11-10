@@ -63,19 +63,6 @@ enum PublicCameraCatalog {
             verified: false
         ),
         CameraCandidate(
-            id: "aktau-caspian-4",
-            name: "Актау — Каспий, 4-й микрорайон",
-            url: "https://cam.xcom.kz:8081/caspy4/tracks-v1/mono.m3u8",
-            lat: 43.6364,
-            lon: 51.1553,
-            source_name: "XCOM Aktau",
-            source_url: sourceURL,
-            catalog_url: catalogueURL,
-            stream_list_url: streamListURL,
-            verification_note: "Публичная ссылка HLS. Доступность сейчас и разрешение на AI-анализ не подтверждены.",
-            verified: false
-        ),
-        CameraCandidate(
             id: "aktau-yntymak",
             name: "Актау — площадь Ынтымак",
             url: "https://cam.xcom.kz:8081/yntymak/tracks-v1/mono.m3u8",

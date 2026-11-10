@@ -8,6 +8,7 @@ private enum Palette {
 struct MainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var api = API()
+    @StateObject private var localEvents = LocalEventStore()
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
     @State private var monitoringBusy = false
@@ -16,12 +17,14 @@ struct MainView: View {
     @State private var selectedTab = 0
     @State private var pushIncident: Incident?
     @State private var selectedPublicCamera: CameraCandidate?
+    @State private var selectedPublisherCamera: PublishedWebCamera?
+    @State private var selectedLocalEvent: LocalFireEvent?
 
     var body: some View {
         TabView(selection: $selectedTab) {
             dashboard.tabItem { Label("Обзор", systemImage: "square.grid.2x2.fill") }.tag(0)
             map.tabItem { Label("Карта", systemImage: "map.fill") }.tag(1)
-            incidents.tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
+            EventCenterView(api: api, store: localEvents).tabItem { Label("События", systemImage: "flame.fill") }.tag(2)
             CameraLibraryView(api: api).tabItem { Label("Камеры", systemImage: "video.fill") }.tag(3)
             DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
@@ -116,6 +119,20 @@ struct MainView: View {
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        HStack {
+                            Text("Мои события").font(.headline)
+                            Spacer()
+                            Button("Открыть журнал") { selectedTab = 2 }
+                                .font(.caption.bold())
+                        }
+                        ForEach(localEvents.events.prefix(3)) { event in
+                            NavigationLink {
+                                LocalEventDetailView(store: localEvents, event: event)
+                            } label: {
+                                LocalEventCard(event: event)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     } else {
                     if let error = api.error {
                         Label(error, systemImage: "wifi.exclamationmark")
@@ -148,10 +165,18 @@ struct MainView: View {
                     HStack {
                         Text("Последние события").font(.headline)
                         Spacer()
-                        Button("Обновить") { Task { await api.refresh() } }
+                        Button("Все события") { selectedTab = 2 }
                             .font(.caption.bold())
                     }
-                    if api.incidents.isEmpty {
+                    ForEach(localEvents.events.prefix(3)) { event in
+                        NavigationLink {
+                            LocalEventDetailView(store: localEvents, event: event)
+                        } label: {
+                            LocalEventCard(event: event)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if api.incidents.isEmpty && localEvents.events.isEmpty {
                         ContentUnavailableView("Нет событий", systemImage: "checkmark.shield",
                             description: Text(api.isConnected ? "Активных событий пока нет." : "Подключите сервер в настройках."))
                             .frame(minHeight: 150)
@@ -198,6 +223,19 @@ struct MainView: View {
                             .background(incident.severity == "critical" ? Color.red : Palette.accent, in: Circle())
                     }
                 }
+                ForEach(localEvents.events.filter { !$0.resolved }) { event in
+                    Annotation(event.title,
+                               coordinate: CLLocationCoordinate2D(latitude: event.city.lat, longitude: event.city.lon)) {
+                        Button {
+                            selectedLocalEvent = event
+                        } label: {
+                            Image(systemName: event.isSimulation ? "play.square.fill" : "flame.fill")
+                                .foregroundStyle(.white).padding(8)
+                                .background(event.isSimulation ? Color.orange : Color.red, in: Circle())
+                        }
+                        .accessibilityLabel(event.isSimulation ? "DEMO в \(event.city.name)" : "Ручное событие в \(event.city.name)")
+                    }
+                }
                 ForEach(api.cameras) { camera in
                     Marker(camera.name, systemImage: "video.fill",
                            coordinate: CLLocationCoordinate2D(latitude: camera.lat, longitude: camera.lon))
@@ -218,10 +256,23 @@ struct MainView: View {
                         .accessibilityLabel("Смотреть \(candidate.name)")
                     }
                 }
+                ForEach(KazakhstanPublisherCameras.candidates) { camera in
+                    Annotation(camera.name,
+                               coordinate: CLLocationCoordinate2D(latitude: camera.city.lat, longitude: camera.city.lon)) {
+                        Button {
+                            selectedPublisherCamera = camera
+                        } label: {
+                            Image(systemName: "video")
+                                .foregroundStyle(.white).padding(8)
+                                .background(.gray, in: Circle())
+                        }
+                        .accessibilityLabel("Непроверенная камера: \(camera.name)")
+                    }
+                }
             }
             .mapStyle(.standard(elevation: .realistic))
             .safeAreaInset(edge: .top) {
-                Text("Бирюзовые точки — публичный каталог; доступность потоков не проверена.")
+                Text("Бирюзовые — HLS, серые — непроверенные камеры, оранжевые — DEMO, красные — сообщения. Отметки по центру города приблизительные.")
                     .font(.caption2)
                     .padding(10)
                     .frame(maxWidth: .infinity)
@@ -231,6 +282,16 @@ struct MainView: View {
             .sheet(item: $selectedPublicCamera) { candidate in
                 NavigationStack {
                     PublicCameraDetailView(candidate: candidate)
+                }
+            }
+            .sheet(item: $selectedPublisherCamera) { camera in
+                NavigationStack {
+                    PublisherCameraDetailView(camera: camera)
+                }
+            }
+            .sheet(item: $selectedLocalEvent) { event in
+                NavigationStack {
+                    LocalEventDetailView(store: localEvents, event: event)
                 }
             }
             .toolbar {

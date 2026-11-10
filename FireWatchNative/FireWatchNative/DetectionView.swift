@@ -9,18 +9,28 @@ struct DetectionView: View {
     @State private var analyzing = false
     @State private var result: DetectionSummary?
     @State private var saveIncident = false
-    @State private var locationName = ""
-    @State private var latitude = ""
-    @State private var longitude = ""
+    @State private var cityID = "semey"
     @State private var error: String?
+    @State private var localResult: OnDeviceFireResult?
+    @State private var localError: String?
+    @State private var localAnalyzing = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("AI-анализ изображения").font(.title2.bold())
-                    Text("Отправляет выбранное фото на FastAPI /detect. Нейросеть работает на сервере, а не на iPhone. Проверяйте режим модели в результате.")
+                    Text("Загрузите фотографию для анализа. Выберите только город — координаты проставятся автоматически. Сейчас реальная модель YOLO работает через дополнительный AI-сервер.")
                         .font(.subheadline).foregroundStyle(.secondary)
+                    if !api.isConnected {
+                        Label("AI-сервер не подключён. Выбор фото доступен, но реальная нейросетевая проверка без Core ML пока недоступна.",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    } else if api.health?.detector?.mode != "real_model" {
+                        Label("Сервер использует демо-режим. Это не подтверждённая детекция.",
+                              systemImage: "info.circle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                     PhotosPicker(selection: $selected, matching: .images) {
                         Label("Выбрать фотографию", systemImage: "photo.on.rectangle")
                             .frame(maxWidth: .infinity)
@@ -31,35 +41,65 @@ struct DetectionView: View {
                             if let data = try? await item?.loadTransferable(type: Data.self) {
                                 image = UIImage(data: data)
                                 result = nil; error = nil
+                                localResult = nil; localError = nil
                             }
                         }
                     }
                     if let image {
                         Image(uiImage: image).resizable().scaledToFit()
                             .frame(maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 16))
+                        Section {
+                            if OnDeviceFireDetector.isInstalled {
+                                Button(localAnalyzing ? "Проверяем на iPhone…" : "Проверить локально через Core ML") {
+                                    localAnalyzing = true
+                                    localResult = nil
+                                    Task {
+                                        defer { localAnalyzing = false }
+                                        do {
+                                            localResult = try await OnDeviceFireDetector.analyze(image)
+                                            localError = nil
+                                        } catch {
+                                            localError = error.localizedDescription
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(localAnalyzing)
+                            } else {
+                                Label("Локальная модель Core ML ещё не установлена. Можно добавить экспортированную модель или подключить AI-сервер.",
+                                      systemImage: "cpu")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if let localResult {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Label("Результат Core ML: \(localResult.classification)",
+                                          systemImage: "cpu.fill")
+                                        .font(.headline)
+                                    Text("Уверенность: \(Int(localResult.confidence * 100))% · объектов: \(localResult.objectCount)")
+                                    Text("Одиночное фото, порог 65%. Результат предварительный и требует подтверждения человеком. DEMO-событие отдельно создаётся во вкладке «События».")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding()
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                            }
+                            if let localError {
+                                Text(localError).font(.caption).foregroundStyle(.orange)
+                            }
+                        }
                         Toggle("Создать инцидент при обнаружении огня/дыма", isOn: $saveIncident)
                         if saveIncident {
-                            TextField("Место обнаружения", text: $locationName)
-                            HStack {
-                                TextField("Широта", text: $latitude)
-                                    .keyboardType(.numbersAndPunctuation)
-                                TextField("Долгота", text: $longitude)
-                                    .keyboardType(.numbersAndPunctuation)
+                            Picker("Город Казахстана", selection: $cityID) {
+                                ForEach(KazakhstanCities.all) { city in
+                                    Text(city.name).tag(city.id)
+                                }
                             }
-                            Text("Укажите реальные координаты места съёмки. Без них инцидент не будет сохранён.")
+                            Text("Событие появится приблизительно в центре города. Это не точная геолокация пожара.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Button(analyzing ? "Анализ..." : "Проверить на огонь и дым") {
-                            let lat = Double(latitude.replacingOccurrences(of: ",", with: "."))
-                            let lon = Double(longitude.replacingOccurrences(of: ",", with: "."))
-                            if saveIncident {
-                                guard let lat, let lon,
-                                      (-90...90).contains(lat),
-                                      (-180...180).contains(lon) else {
-                                    error = "Для создания инцидента укажите корректные широту и долготу."
-                                    return
-                                }
-                            }
+                            let city = KazakhstanCities.find(cityID)
+                            let lat: Double? = saveIncident ? city.lat : nil
+                            let lon: Double? = saveIncident ? city.lon : nil
                             Task {
                                 guard let jpeg = image.jpegData(compressionQuality: 0.8) else {
                                     error = "Не удалось подготовить фотографию."
@@ -72,7 +112,7 @@ struct DetectionView: View {
                                         saveIncident: saveIncident,
                                         latitude: lat,
                                         longitude: lon,
-                                        locationName: locationName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        locationName: saveIncident ? "\(city.name) (координаты центра города)" : nil
                                     )
                                     error = nil
                                 } catch {
@@ -82,7 +122,7 @@ struct DetectionView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(analyzing)
+                        .disabled(analyzing || !api.isConnected)
                     }
                     if let result {
                         ProtectedMediaImage(

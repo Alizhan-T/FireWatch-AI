@@ -8,15 +8,26 @@ struct CameraLibraryView: View {
     @State private var showingLocalAdd = false
     @State private var showingServerAdd = false
     @State private var showUnverified = false
+    @State private var cityFilter = "all"
+
+    private var filteredDirectCameras: [CameraCandidate] {
+        cityFilter == "all" || cityFilter == "aktau" ? PublicCameraCatalog.candidates : []
+    }
+
+    private var filteredPublisherCameras: [PublishedWebCamera] {
+        KazakhstanPublisherCameras.candidates.filter {
+            cityFilter == "all" || $0.cityID == cityFilter
+        }
+    }
 
     private var accessible: [CameraCandidate] {
-        PublicCameraCatalog.candidates.filter {
+        filteredDirectCameras.filter {
             availability.status(for: $0.id) == .playlistAvailable
         }
     }
 
     private var otherCandidates: [CameraCandidate] {
-        PublicCameraCatalog.candidates.filter {
+        filteredDirectCameras.filter {
             availability.status(for: $0.id) != .playlistAvailable
         }
     }
@@ -56,8 +67,15 @@ struct CameraLibraryView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Казахстан · прямой просмотр") {
-                    Text("Нажмите на камеру — видео откроется внутри FireWatch через AVPlayer. На другие сайты переходить не нужно. Используются только публично опубликованные HLS-ссылки камер Казахстана.")
+                Section("Казахстан · выбор города") {
+                    Picker("Город", selection: $cityFilter) {
+                        Text("Все города").tag("all")
+                        Text("Семей").tag("semey")
+                        Text("Актау").tag("aktau")
+                        Text("Алматы").tag("almaty")
+                    }
+                    .pickerStyle(.menu)
+                    Text("Прямые HLS-камеры открываются во встроенном плеере. Для Семея и Алматы пока доступны страницы источников внутри приложения, а не проверенные HLS-потоки.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
@@ -69,7 +87,7 @@ struct CameraLibraryView: View {
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 8)
                         Button("Обновить") {
-                            Task { await availability.refresh(PublicCameraCatalog.candidates) }
+                            Task { await availability.refresh(filteredDirectCameras) }
                         }
                         .disabled(availability.checking)
                     }
@@ -101,6 +119,26 @@ struct CameraLibraryView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+                if !filteredPublisherCameras.isEmpty {
+                    Section("Другие города · источник внутри приложения") {
+                        ForEach(filteredPublisherCameras) { camera in
+                            NavigationLink {
+                                PublisherCameraDetailView(camera: camera)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label(camera.name, systemImage: "video")
+                                        .font(.subheadline.bold())
+                                    Text("Не подтверждён прямой HLS · \(camera.city.name)")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        Text("Семей: источник нестабилен, поэтому не отображается как гарантированно онлайн.")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 Section("Природные территории Казахстана") {
@@ -156,11 +194,13 @@ struct CameraLibraryView: View {
             .sheet(isPresented: $showingServerAdd) {
                 AddCameraView(api: api)
             }
-            .task {
-                await availability.refresh(PublicCameraCatalog.candidates)
+            .task(id: cityFilter) {
+                if !filteredDirectCameras.isEmpty {
+                    await availability.refresh(filteredDirectCameras)
+                }
             }
             .refreshable {
-                await availability.refresh(PublicCameraCatalog.candidates)
+                await availability.refresh(filteredDirectCameras)
                 if api.isConnected { await api.refresh() }
             }
         }
@@ -204,8 +244,7 @@ private struct AddCameraView: View {
     @ObservedObject var api: API
     @State private var name = ""
     @State private var url = ""
-    @State private var lat = "51.1694"
-    @State private var lon = "71.4491"
+    @State private var cityID = "semey"
     @State private var saving = false
     @State private var error: String?
 
@@ -217,9 +256,14 @@ private struct AddCameraView: View {
                     TextField("https://.../index.m3u8 или rtsp://...", text: $url)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 }
-                Section("Местоположение") {
-                    TextField("Широта", text: $lat).keyboardType(.numbersAndPunctuation)
-                    TextField("Долгота", text: $lon).keyboardType(.numbersAndPunctuation)
+                Section("Город") {
+                    Picker("Город Казахстана", selection: $cityID) {
+                        ForEach(KazakhstanCities.all) { city in
+                            Text(city.name).tag(city.id)
+                        }
+                    }
+                    Text("Координаты камеры будут ориентировочно указаны как центр города. Для точного лесного мониторинга позже потребуется реальное местоположение объектива.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Добавление не подтверждает работоспособность потока. После сохранения проверьте его через FFmpeg. Для RTSP нужен запущенный FFmpeg на сервере.")
@@ -232,23 +276,21 @@ private struct AddCameraView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(saving ? "Сохранение..." : "Добавить") {
-                        guard let latitude = Double(lat.replacingOccurrences(of: ",", with: ".")),
-                              let longitude = Double(lon.replacingOccurrences(of: ",", with: ".")),
-                              (-90...90).contains(latitude), (-180...180).contains(longitude),
-                              let parsedURL = URL(string: url),
+                        guard let parsedURL = URL(string: url),
                               let scheme = parsedURL.scheme?.lowercased(),
                               ["http", "https", "rtsp", "rtsps"].contains(scheme),
                               parsedURL.host != nil,
                               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                            error = "Проверьте название, полный URL и координаты."
+                            error = "Проверьте название и полный URL камеры."
                             return
                         }
                         saving = true
                         Task {
                             do {
+                                let city = KazakhstanCities.find(cityID)
                                 _ = try await api.addCamera(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                                         streamURL: url.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                        lat: latitude, lon: longitude)
+                                                        lat: city.lat, lon: city.lon)
                                 dismiss()
                             } catch {
                                 self.error = error.localizedDescription

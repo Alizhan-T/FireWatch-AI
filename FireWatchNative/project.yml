@@ -24,6 +24,10 @@ targets:
         product: FirebaseMessaging
     sources:
       - path: FireWatchNative
+    preBuildScripts:
+      - name: Generate minimalist FireWatch AppIcon
+        script: SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" xcrun --sdk macosx swift "$SRCROOT/tools/generate_app_icon.swift"
+        basedOnDependencyAnalysis: false
     info:
       path: Info.plist
     # No Push Notifications entitlement by default: free Personal Teams can sign
@@ -32,6 +36,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kz.firewatch.native
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGN_STYLE: Automatic

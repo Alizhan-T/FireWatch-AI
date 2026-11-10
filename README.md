@@ -46,6 +46,14 @@ Starting a DEMO requests iPhone notification permission when required and schedu
 
 Physical-device verification is still required for stream decoding, permissions and notifications. Real autonomous fire/smoke detection is **not implemented by this feature** and requires a separately evaluated Core ML model or the existing optional server. Public viewing alone does not authorize AI analysis of third-party feeds.
 
+## Improved training VFX and AI explanations (11 November 2026)
+
+- The training camera overlay uses a continuously animated **procedural** fire effect: irregular flame tongues, rising translucent smoke, embers, and warm light scatter. It no longer uses the cartoon SF Symbols flames/clouds. This is still synthetic VFX, not actual captured fire footage, and is clearly labelled DEMO on screen.
+- The image-analysis screen explains what was detected (fire, smoke, both, or neither), what the score means, and what an operator should verify next. Per-object findings can be shown when returned by the server.
+- Actual YOLO model results and demo color heuristics are visibly separated. Demo heuristics cannot automatically create an incident from the iOS image-analysis screen. No AI text-generation service or LLM prompts are implied.
+- Core ML now respects image orientation and requires explicit class names "fire"/"smoke", rather than guessing what numeric class IDs 0/1 mean. Models with ambiguous labels fail clearly rather than swapping fire and smoke.
+- No real fire detection is implied by a DEMO overlay or by a single image. Public camera feeds remain subject to operator permissions. Local test SOS does not notify emergency responders.
+
 ## What requires the optional backend?
 
 The existing backend/ directory is retained because real YOLOv8n fire/smoke inference currently runs there, not on the iPhone. Running FireWatch without a backend **does not provide automatic fire detection, incident persistence, stream scanning or remote push alerts**.

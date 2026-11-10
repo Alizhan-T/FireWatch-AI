@@ -53,8 +53,8 @@ struct DemoFireScenarioView: View {
             return TrainingCameraOption(
                 id: "personal.\(camera.id.uuidString)",
                 title: camera.name,
-                city: "Пользовательский источник",
-                cityID: "personal",
+                city: camera.cityTitle,
+                cityID: camera.cityID ?? "personal",
                 streamURL: url,
                 youtubeID: nil,
                 publisherPageURL: nil
@@ -290,7 +290,10 @@ struct DemoFireScenarioView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if chosenID.isEmpty {
-                chosenID = cameras.first(where: { $0.cityID == event.cityID })?.id ??
+                chosenID = cameras.first(where: {
+                    $0.cityID == event.cityID && $0.id.hasPrefix("personal.")
+                })?.id ??
+                           cameras.first(where: { $0.cityID == event.cityID })?.id ??
                            cameras.first(where: { $0.cityID == "aktau" })?.id ??
                            cameras.first?.id ?? ""
             }

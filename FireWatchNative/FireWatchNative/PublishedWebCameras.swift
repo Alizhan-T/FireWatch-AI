@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import SafariServices
 
 /// Publisher pages without a known authorized direct HLS feed.
 /// They are kept separate from verified HLS streams and never labelled "online".
@@ -47,16 +48,38 @@ enum KazakhstanPublisherCameras {
         .init(
             id: "astana-atameken-live",
             cityID: "astana",
-            name: "Астана — городской прямой эфир Atameken Business",
+            name: "Астана — вид города (Atameken Business)",
             pageURL: URL(string: "https://www.youtube.com/live/FKT8MiiKQG4")!,
-            reliabilityNote: "Публичный эфир столицы Atameken Business, опубликован 28.01.2026. Встраивание и актуальный LIVE-статус на iPhone не подтверждены.",
+            reliabilityNote: "Официальный эфир, анонсированный 28.01.2026. YouTube может запретить встроенное видео; воспользуйтесь кнопкой «Открыть источник внутри приложения». LIVE не проверен на устройстве.",
             youtubeVideoID: "FKT8MiiKQG4"
+        ),
+        .init(
+            id: "astana-khan-shatyr-publisher",
+            cityID: "astana",
+            name: "Астана — Хан Шатыр · камера издателя",
+            pageURL: URL(string: "https://www.vision-environnement.com/ru/webcam/kazakhstan/astana/998-astana/")!,
+            reliabilityNote: "Альтернативная публичная страница камеры Хан Шатыр. Дата изображения и статус трансляции могут быть устаревшими; прямого разрешённого HLS-потока нет."
         )
     ]
 }
 
 /// View a publisher's public page in-app without claiming to extract/redistribute
 /// its protected stream. Video playback may still depend on website policies.
+
+/// Fallback for a publisher whose video cannot play in WKWebView.
+/// SafariServices displays the operator's own public page INSIDE this app.
+struct InAppCameraBrowser: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let controller = SFSafariViewController(url: url)
+        controller.dismissButtonStyle = .close
+        return controller
+    }
+
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
 private struct InAppPublisherPage: UIViewRepresentable {
     let url: URL
     @Binding var isLoading: Bool
@@ -147,6 +170,7 @@ struct PublisherCameraDetailView: View {
     @State private var reloadID = UUID()
     @State private var pageLoading = true
     @State private var loadError: String?
+    @State private var showSourceBrowser = false
 
     var body: some View {
         ScrollView {
@@ -172,6 +196,20 @@ struct PublisherCameraDetailView: View {
                         Label(loadError, systemImage: "wifi.exclamationmark")
                             .font(.footnote).foregroundStyle(.orange)
                     }
+                }
+                if camera.youtubeVideoID != nil {
+                    Text("Если YouTube не воспроизводится во встроенном окне, откройте страницу владельца в защищённом браузере внутри приложения.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Button {
+                    showSourceBrowser = true
+                } label: {
+                    Label("Открыть источник внутри приложения", systemImage: "globe")
+                }
+                .buttonStyle(.borderedProminent)
+                .sheet(isPresented: $showSourceBrowser) {
+                    InAppCameraBrowser(url: camera.pageURL)
+                        .ignoresSafeArea()
                 }
                 Label("Публикация оператора · статус LIVE не гарантирован", systemImage: "video")
                     .font(.subheadline)

@@ -7,6 +7,13 @@ struct LocalHLSCamera: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
     var streamURL: String
+    /// Optional for backwards compatibility with previously saved bookmarks.
+    var cityID: String?
+
+    var cityTitle: String {
+        guard let cityID else { return "Город не указан" }
+        return KazakhstanCities.find(cityID).name
+    }
 }
 
 enum LocalHLSCameraError: LocalizedError {
@@ -37,7 +44,7 @@ final class LocalHLSCameraStore: ObservableObject {
         }
     }
 
-    func add(name: String, streamURL: String) throws {
+    func add(name: String, streamURL: String, cityID: String? = nil) throws {
         let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let address = streamURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty,
@@ -48,10 +55,14 @@ final class LocalHLSCameraStore: ObservableObject {
               url.path.lowercased().hasSuffix(".m3u8") else {
             throw LocalHLSCameraError.invalid
         }
+        if let cityID, !KazakhstanCities.all.contains(where: { $0.id == cityID }) {
+            throw LocalHLSCameraError.invalid
+        }
         guard !cameras.contains(where: { $0.streamURL == address }) else {
             throw LocalHLSCameraError.duplicate
         }
-        cameras.append(LocalHLSCamera(id: UUID(), name: title, streamURL: address))
+        cameras.append(LocalHLSCamera(id: UUID(), name: title, streamURL: address,
+                                      cityID: cityID))
         persist()
     }
 
@@ -357,6 +368,7 @@ struct AddLocalHLSCameraView: View {
     @ObservedObject var store: LocalHLSCameraStore
     @State private var name = ""
     @State private var streamURL = ""
+    @State private var cityID = "astana"
     @State private var errorMessage: String?
 
     var body: some View {
@@ -368,6 +380,14 @@ struct AddLocalHLSCameraView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                    Picker("Город камеры", selection: $cityID) {
+                        ForEach(KazakhstanCities.all) { city in
+                            Text(city.name).tag(city.id)
+                        }
+                    }
+                    Text("Укажите город фактической камеры: ссылка на другой город не станет камерой Астаны.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Сохраняется только на iPhone. Поддерживается прямой HLS (.m3u8). RTSP без конвертации не воспроизводится AVPlayer. Используйте лишь потоки с разрешённым просмотром.")
@@ -385,7 +405,7 @@ struct AddLocalHLSCameraView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Сохранить") {
                         do {
-                            try store.add(name: name, streamURL: streamURL)
+                            try store.add(name: name, streamURL: streamURL, cityID: cityID)
                             dismiss()
                         } catch {
                             errorMessage = error.localizedDescription

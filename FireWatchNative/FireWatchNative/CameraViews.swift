@@ -11,7 +11,12 @@ struct CameraLibraryView: View {
     @State private var cityFilter = "all"
 
     private var filteredDirectCameras: [CameraCandidate] {
-        cityFilter == "all" || cityFilter == "aktau" ? PublicCameraCatalog.candidates : []
+        switch cityFilter {
+        case "all": PublicCameraCatalog.candidates
+        case "almaty": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("almaty-") }
+        case "aktau": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("aktau-") }
+        default: []
+        }
     }
 
     private var filteredPublisherCameras: [PublishedWebCamera] {
@@ -76,7 +81,7 @@ struct CameraLibraryView: View {
                         Text("Алматы").tag("almaty")
                     }
                     .pickerStyle(.menu)
-                    Text("Актау: прямые HLS-потоки. Астана: встроенный публичный эфир Atameken Business. Семей и Алматы: страницы операторов, работоспособность видео на iPhone не гарантируется.")
+                    Text("Актау: проверяемые HLS-потоки. Алматы: два новых HLS-кандидата и страницы Шымбулака. Астана: встроенный эфир Atameken Business. Семей: нестабильный источник без подтверждённого HLS.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {

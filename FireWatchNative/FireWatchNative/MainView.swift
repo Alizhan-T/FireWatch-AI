@@ -6,6 +6,7 @@ private enum Palette {
 }
 
 struct MainView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var api = API()
     @StateObject private var pushManager = PushManager.shared
     @State private var showSettings = false
@@ -24,30 +25,36 @@ struct MainView: View {
             DetectionView(api: api).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
         .tint(Palette.accent)
-        .task {
+        .task(id: scenePhase) {
+            // The SwiftUI task is cancelled when the app leaves the foreground.
+            guard scenePhase == .active else { return }
             await api.refresh()
-            if let token = pushManager.fcmToken {
+            if !api.baseURL.isEmpty, let token = pushManager.fcmToken {
                 try? await api.registerDevice(token: token)
             }
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(nanoseconds: 20_000_000_000)
+                    try await Task.sleep(nanoseconds: 30_000_000_000)
                 } catch {
                     break
                 }
-                if Task.isCancelled { break }
-                await api.refresh()
+                guard !Task.isCancelled else { break }
+                // Standalone HLS browsing must not keep polling a nonexistent API.
+                if !api.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    await api.refresh()
+                }
             }
         }
         .onChange(of: pushManager.fcmToken) { _, token in
-            guard let token else { return }
+            guard let token, !api.baseURL.isEmpty else { return }
             Task {
                 do { try await api.registerDevice(token: token) }
                 catch { api.error = error.localizedDescription }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .fireWatchOpenIncident)) { notification in
-            guard let id = notification.userInfo?["incident_id"] as? String else { return }
+            guard let id = notification.userInfo?["incident_id"] as? String,
+                  !api.baseURL.isEmpty else { return }
             selectedTab = 2
             Task {
                 do { pushIncident = try await api.fetchIncident(id: id) }

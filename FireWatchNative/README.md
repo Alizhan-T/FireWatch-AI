@@ -12,6 +12,27 @@ To opt into the existing remote AI features later, configure the optional backen
 
 Native iPhone client for the FireWatch-AI FastAPI + YOLO backend. The native client does not use Flutter.
 
+## Free Apple Personal Team: iPhone signing
+
+**Remote APNs Push Notifications are intentionally disabled by default.** A free Apple Account (Personal Team) cannot provision the Push Notifications capability, and the main workflow (viewing Kazakhstan HLS streams inside the native app) does not need push or a FireWatch server.
+
+To update an existing XcodeGen checkout when signing previously failed:
+
+```bash
+# Run from the repository root on branch main
+git stash push -m "local Xcode signing changes" -- FireWatchNative/Info.plist FireWatchNative/project.yml
+git pull origin main
+cd FireWatchNative
+xcodegen generate
+open FireWatchNative.xcodeproj
+```
+
+In Xcode choose your iPhone, select your **Personal Team** under **Signing & Capabilities**, and press **Cmd+R**. If the generated target still shows a **Push Notifications** capability, close Xcode, make sure `FireWatchNative/project.yml` is up to date, regenerate the project and reopen it. Do not apply the saved stash automatically: it can reintroduce the unsupported entitlement.
+
+To enable real background remote APNs/FCM push notifications later, enrol in the paid Apple Developer Program, enable Push Notifications for your app identifier, add the push capability/entitlement and configure the APNs/Firebase credentials. These optional steps are independent of HLS playback.
+
+---
+
 ## 1. Generate and open the Xcode project
 
 Install XcodeGen on macOS:

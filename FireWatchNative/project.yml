@@ -26,14 +26,9 @@ targets:
       - path: FireWatchNative
     info:
       path: Info.plist
-    attributes:
-      SystemCapabilities:
-        com.apple.Push:
-          enabled: 1
-    entitlements:
-      path: FireWatchNative.entitlements
-      properties:
-        aps-environment: development
+    # No Push Notifications entitlement by default: free Personal Teams can sign
+    # and run the camera viewer on an actual iPhone.
+    # APNs/FCM requires a paid Apple Developer team and explicit opt-in setup.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kz.firewatch.native

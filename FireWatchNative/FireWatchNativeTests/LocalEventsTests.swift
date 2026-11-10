@@ -40,9 +40,7 @@ final class FireWatchLocalFeaturesTests: XCTestCase {
     func testSemeyIsNotPresentedAsConfirmedDirectHLS() {
         XCTAssertFalse(PublicCameraCatalog.candidates.contains(where: { $0.name.contains("Семей") }))
         XCTAssertTrue(KazakhstanPublisherCameras.candidates.contains(where: {
-            $0.cityID == "semey" && $0.reliabilityNote.contains("нестабильный")
-        }) == false ? KazakhstanPublisherCameras.candidates.contains(where: {
             $0.cityID == "semey" && $0.reliabilityNote.contains("нестабиль")
-        }) : true)
+        }))
     }
 }

@@ -14,7 +14,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -27,3 +27,16 @@ jobs:
             -scheme FireWatchNative -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build
+      - name: Run bookmark regression tests on iPhone Simulator
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[x for group in d["devices"].values() for x in group if x.get("isAvailable") and x.get("name","").startswith("iPhone")]; print(xs[0]["udid"] if xs else "")')"
+          if [ -z "$SIMULATOR_ID" ]; then
+            echo "No available iPhone Simulator — tests cannot be skipped silently."
+            exit 1
+          fi
+          xcodebuild test -project FireWatchNative/FireWatchNative.xcodeproj \
+            -scheme FireWatchNative -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO

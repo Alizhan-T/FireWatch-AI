@@ -27,9 +27,11 @@ enum LocalHLSCameraError: LocalizedError {
 final class LocalHLSCameraStore: ObservableObject {
     @Published private(set) var cameras: [LocalHLSCamera] = []
     private let storageKey = "firewatch.localHLSCameras.v1"
+    private let defaults: UserDefaults
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([LocalHLSCamera].self, from: data) {
             cameras = saved
         }
@@ -60,65 +62,219 @@ final class LocalHLSCameraStore: ObservableObject {
 
     private func persist() {
         if let data = try? JSONEncoder().encode(cameras) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: storageKey)
         }
     }
 }
 
-/// AVPlayer reads the remote HLS stream directly: no FireWatch backend involved.
+/// Direct AVPlayer playback. A small watchdog prevents endless loading on dead links.
+/// AVPlayer can recover short buffering stalls on its own; terminal failures get
+/// two bounded reconnect attempts, never an unlimited network/battery loop.
+enum HLSPlaybackPhase {
+    case idle
+    case connecting
+    case buffering
+    case playing
+    case reconnecting
+    case failed
+}
+
+@MainActor
+final class HLSPlaybackController: ObservableObject {
+    @Published private(set) var player: AVPlayer?
+    @Published private(set) var phase: HLSPlaybackPhase = .idle
+    @Published private(set) var message = "Готово к подключению"
+
+    private var url: URL?
+    private var session = UUID()
+    private var attempts = 0
+    private var itemStatusObservation: NSKeyValueObservation?
+    private var playerStatusObservation: NSKeyValueObservation?
+    private var stalledObserver: NSObjectProtocol?
+    private var watchdog: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+
+    func start(_ url: URL) {
+        guard self.url != url || player == nil else { return }
+        self.url = url
+        attempts = 0
+        connect()
+    }
+
+    func retry() {
+        guard url != nil else { return }
+        attempts = 0
+        connect()
+    }
+
+    func stop() {
+        session = UUID() // Ignore callbacks from an old player after navigation.
+        clearPlayback()
+        url = nil
+        attempts = 0
+        phase = .idle
+        message = "Воспроизведение остановлено"
+    }
+
+    private func clearPlayback() {
+        watchdog?.cancel()
+        watchdog = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
+        playerStatusObservation?.invalidate()
+        playerStatusObservation = nil
+        if let stalledObserver {
+            NotificationCenter.default.removeObserver(stalledObserver)
+        }
+        stalledObserver = nil
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+    }
+
+    private func connect() {
+        clearPlayback()
+        guard let url else { return }
+        let token = UUID()
+        session = token
+        phase = .connecting
+        message = "Подключение к видеопотоку…"
+
+        let item = AVPlayerItem(url: url)
+        let streamPlayer = AVPlayer(playerItem: item)
+        streamPlayer.automaticallyWaitsToMinimizeStalling = true
+        player = streamPlayer
+
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            let status = item.status
+            Task { @MainActor [weak self] in
+                guard let self, self.session == token else { return }
+                if status == .failed {
+                    self.recover(reason: "Камера отклонила подключение или поток недоступен", token: token)
+                }
+            }
+        }
+        playerStatusObservation = streamPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            let status = observed.timeControlStatus
+            Task { @MainActor [weak self] in
+                guard let self, self.session == token else { return }
+                switch status {
+                case .playing:
+                    self.phase = .playing
+                    self.message = "Видео воспроизводится"
+                    self.attempts = 0
+                    self.watchdog?.cancel()
+                    self.watchdog = nil
+                case .waitingToPlayAtSpecifiedRate:
+                    if self.phase == .playing {
+                        self.phase = .buffering
+                        self.message = "Связь прервалась — ожидаем возобновления…"
+                        self.startWatchdog(token)
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        stalledObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.session == token else { return }
+                self.phase = .buffering
+                self.message = "Поток завис — пробуем восстановить воспроизведение…"
+                self.startWatchdog(token)
+            }
+        }
+        streamPlayer.play()
+        startWatchdog(token)
+    }
+
+    private func startWatchdog(_ token: UUID) {
+        watchdog?.cancel()
+        watchdog = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 20_000_000_000)
+            } catch { return }
+            guard let self, self.session == token, self.phase != .playing else { return }
+            self.recover(reason: "Камера не передаёт видео в течение 20 секунд", token: token)
+        }
+    }
+
+    private func recover(reason: String, token: UUID) {
+        guard session == token, phase != .reconnecting, phase != .failed else { return }
+        guard attempts < 2 else {
+            clearPlayback()
+            phase = .failed
+            message = "\(reason). Проверьте интернет или ссылку на поток."
+            return
+        }
+        attempts += 1
+        let currentAttempt = attempts
+        phase = .reconnecting
+        message = "Восстанавливаем поток (\(currentAttempt)/2)…"
+        watchdog?.cancel()
+        watchdog = nil
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(currentAttempt * 2) * 1_000_000_000)
+            } catch { return }
+            guard let self, self.session == token, self.phase == .reconnecting else { return }
+            self.connect()
+        }
+    }
+}
+
+/// AVPlayer opens HLS directly without any FireWatch API or proxy.
 struct DirectHLSPlayer: View {
     let url: URL
-    @State private var player: AVPlayer?
-    @State private var itemObserver: NSKeyValueObservation?
-    @State private var playbackStatus = "Подключение к видеопотоку…"
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var playback = HLSPlaybackController()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let player {
+            if let player = playback.player {
                 VideoPlayer(player: player)
                     .frame(height: 250)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                ProgressView("Подключение…")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 250)
+                ContentUnavailableView(
+                    playback.phase == .failed ? "Камера недоступна" : "Подключаем камеру",
+                    systemImage: playback.phase == .failed ? "wifi.exclamationmark" : "video",
+                    description: Text(playback.message)
+                )
+                .frame(height: 250)
             }
-            Text(playbackStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("Доступность потока определяется в момент открытия. Статус плеера не гарантирует круглосуточную работу камеры.")
+            if playback.phase != .failed {
+                Text(playback.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if playback.phase == .failed {
+                Button {
+                    playback.retry()
+                } label: {
+                    Label("Повторить подключение", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Text("Соединение проверяется при открытии. Просмотр требует интернета; поток может быть отключён оператором.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .onAppear(perform: startPlayback)
-        .onDisappear {
-            itemObserver?.invalidate()
-            itemObserver = nil
-            player?.pause()
-            player = nil
+        .onAppear {
+            if scenePhase == .active { playback.start(url) }
         }
-    }
-
-    private func startPlayback() {
-        guard player == nil else { return }
-        let item = AVPlayerItem(url: url)
-        itemObserver = item.observe(\.status, options: [.initial, .new]) { observed, _ in
-            let message: String
-            switch observed.status {
-            case .readyToPlay:
-                message = "Поток открыт плеером. Воспроизведение зависит от соединения."
-            case .failed:
-                message = "Не удалось открыть поток. Проверьте источник и доступ к нему."
-            default:
-                message = "Подключение к видеопотоку…"
-            }
-            Task { @MainActor in
-                playbackStatus = message
-            }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { playback.start(url) }
+            else { playback.stop() } // Don't stream while the app is backgrounded.
         }
-        let streamPlayer = AVPlayer(playerItem: item)
-        player = streamPlayer
-        streamPlayer.play()
+        .onDisappear { playback.stop() }
     }
 }
 

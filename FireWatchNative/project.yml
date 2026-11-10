@@ -41,3 +41,17 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+    scheme:
+      testTargets:
+        - FireWatchNativeTests
+
+  FireWatchNativeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FireWatchNativeTests
+    dependencies:
+      - target: FireWatchNative
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES

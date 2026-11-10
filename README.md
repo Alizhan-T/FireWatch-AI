@@ -50,6 +50,10 @@ For optional AI backend usage see [Native iOS instructions](FireWatchNative/READ
     deploy/              Optional Docker/Caddy/HTTPS deployment
     compose.yaml         Optional server configuration
 
+## Stability and QA
+
+See [iPhone reliability checklist](docs/STABILITY_CHECKLIST.md) for simulator tests, bounded HLS retries, physical-device verification and conditions for claiming a camera is online.
+
 ## Safety and transparency
 
 - Video stream URLs should be accessed only where the operator allows it.

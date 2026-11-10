@@ -3,67 +3,117 @@ import AVKit
 
 struct CameraLibraryView: View {
     @ObservedObject var api: API
-    @State private var showingAdd = false
-    @State private var showingLocalAdd = false
     @StateObject private var localStore = LocalHLSCameraStore()
-    @State private var candidates: [CameraCandidate] = PublicCameraCatalog.candidates
-    @State private var candidateLoading = false
-    @State private var candidateError: String?
-    @State private var usingBundledCatalogue = true
-    @State private var candidateProgressID: String?
-    @State private var candidateResults: [String: String] = [:]
+    @StateObject private var availability = KazakhstanCameraAvailability()
+    @State private var showingLocalAdd = false
+    @State private var showingServerAdd = false
+    @State private var showUnverified = false
 
-    private func loadCandidates() async {
-        candidateLoading = true
-        defer { candidateLoading = false }
-
-        guard api.isConnected else {
-            candidates = PublicCameraCatalog.candidates
-            usingBundledCatalogue = true
-            candidateError = nil
-            return
-        }
-
-        do {
-            let remoteCandidates = try await api.fetchCameraCandidates()
-            candidates = remoteCandidates.isEmpty ? PublicCameraCatalog.candidates : remoteCandidates
-            usingBundledCatalogue = remoteCandidates.isEmpty
-            candidateError = nil
-        } catch {
-            candidates = PublicCameraCatalog.candidates
-            usingBundledCatalogue = !candidates.isEmpty
-            candidateError = candidates.isEmpty ? error.localizedDescription : nil
+    private var accessible: [CameraCandidate] {
+        PublicCameraCatalog.candidates.filter {
+            availability.status(for: $0.id) == .playlistAvailable
         }
     }
 
-    private func addAndCheck(_ candidate: CameraCandidate) {
-        guard !api.cameras.contains(where: { $0.url == candidate.url }) else { return }
-        candidateProgressID = candidate.id
-        Task {
-            do {
-                let camera = try await api.addCamera(
-                    name: candidate.name,
-                    streamURL: candidate.url,
-                    lat: candidate.lat,
-                    lon: candidate.lon
-                )
-                let checked = try await api.checkCamera(camera)
-                candidateResults[candidate.id] = checked.status == "online"
-                    ? "Поток доступен — камера добавлена."
-                    : "Камера добавлена, но поток не отвечает: \(checked.last_error ?? "причина не указана")."
-            } catch {
-                candidateResults[candidate.id] = error.localizedDescription
+    private var otherCandidates: [CameraCandidate] {
+        PublicCameraCatalog.candidates.filter {
+            availability.status(for: $0.id) != .playlistAvailable
+        }
+    }
+
+    private func reachabilityDescription(_ candidate: CameraCandidate) -> String {
+        switch availability.status(for: candidate.id) {
+        case .playlistAvailable: "HLS-плейлист отвечает · нажмите для просмотра"
+        case .checking: "Проверяется доступность…"
+        case .unavailable: "Плейлист не отвечает · можно попробовать вручную"
+        case .unchecked: "Ожидает проверки"
+        }
+    }
+
+    private func cameraRow(_ candidate: CameraCandidate) -> some View {
+        NavigationLink {
+            PublicCameraDetailView(candidate: candidate)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "video.fill")
+                    .foregroundStyle(availability.status(for: candidate.id) == .playlistAvailable ? .green : .secondary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(candidate.name).font(.subheadline.bold())
+                    Text(reachabilityDescription(candidate))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(candidate.source_name)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
-            candidateProgressID = nil
+            .padding(.vertical, 5)
         }
     }
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Мои HLS-камеры · без сервера") {
-                    Text("Добавьте прямые HLS-ссылки для просмотра на iPhone. Камеры сохраняются локально и доступны даже без FireWatch API; для воспроизведения нужен интернет.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                Section("Казахстан · прямой просмотр") {
+                    Text("Нажмите на камеру — видео откроется внутри FireWatch через AVPlayer. На другие сайты переходить не нужно. Используются только публично опубликованные HLS-ссылки камер Казахстана.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        if availability.checking {
+                            ProgressView()
+                        }
+                        Text(availability.checking ? "Проверяем HLS-плейлисты…" : "Проверка доступности по запросу")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("Обновить") {
+                            Task { await availability.refresh(PublicCameraCatalog.candidates) }
+                        }
+                        .disabled(availability.checking)
+                    }
+                    Text("Доступный HLS-плейлист ещё не гарантирует видеокадры или право на автоматический AI-анализ. Действительное воспроизведение проверяется во встроенном плеере.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Ответившие HLS-камеры") {
+                    ForEach(accessible) { camera in
+                        cameraRow(camera)
+                    }
+                    if accessible.isEmpty {
+                        if availability.checking {
+                            ProgressView("Поиск доступных потоков Казахстана…")
+                        } else {
+                            Text("Сейчас нет подтверждённых ответов от HLS-плейлистов. Это не исключает временную сетевую ошибку — откройте ручную проверку ниже.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !otherCandidates.isEmpty {
+                    Section {
+                        DisclosureGroup("Остальные камеры Казахстана (\(otherCandidates.count))", isExpanded: $showUnverified) {
+                            ForEach(otherCandidates) { camera in
+                                cameraRow(camera)
+                            }
+                            Text("Это опубликованные ссылки, а не подтверждённые рабочие камеры. Все они по нажатию открываются внутри приложения.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Section("Природные территории Казахстана") {
+                    NavigationLink {
+                        AkzhaiykEmbeddedCameraView()
+                    } label: {
+                        Label("Резерват «Акжайык» · видео внутри приложения", systemImage: "leaf")
+                    }
+                    Text("Опубликованная трансляция YouTube. Встроенное воспроизведение зависит от доступности записи/эфира и разрешения владельца на встраивание; текущий LIVE-статус не подтверждён.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Мои HLS-камеры · только iPhone") {
                     ForEach(localStore.cameras) { camera in
                         NavigationLink {
                             LocalHLSCameraDetailView(camera: camera)
@@ -79,172 +129,72 @@ struct CameraLibraryView: View {
                     Button {
                         showingLocalAdd = true
                     } label: {
-                        Label("Добавить HLS-камеру на iPhone", systemImage: "plus.circle.fill")
+                        Label("Добавить прямой HLS-поток", systemImage: "plus.circle")
                     }
                 }
-                Section {
-                    Text("Подключайте только собственные камеры или публичные потоки, доступ к которым разрешён оператором. RTSP проверяется на сервере через FFmpeg; iPhone воспроизводит HLS.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Link(destination: URL(string: "https://pocketworld.org/ru/webcams/country/kz")!) {
-                        Label("Каталог открытых веб-камер Казахстана", systemImage: "globe.europe.africa")
-                    }
-                    Text("Каталог содержит публичные ссылки и метаданные, но не гарантирует, что каждый поток доступен сейчас или разрешён для автоматического AI-анализа.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Открытые камеры Казахстана") {
-                    Text("Городские и прибрежные HLS-камеры Актау: работоспособность ссылок не гарантируется. Видео доступно для прямого просмотра; AI-проверка через FFmpeg — только с подключённым сервером.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    if usingBundledCatalogue {
-                        Label("Встроенный список: видео можно открыть без сервера FireWatch.", systemImage: "wifi.slash")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if candidateLoading {
-                        ProgressView("Загружаем каталог…")
-                    }
-                    if let candidateError {
-                        Text(candidateError).font(.footnote).foregroundStyle(.red)
-                    }
-                    ForEach(candidates) { candidate in
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(candidate.name).font(.subheadline.bold())
-                            Text("HLS · \(candidate.lat), \(candidate.lon)")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(candidate.verification_note)
-                                .font(.caption2).foregroundStyle(.secondary)
-                            HStack {
-                                NavigationLink {
-                                    PublicCameraDetailView(candidate: candidate)
-                                } label: {
-                                    Label("Смотреть", systemImage: "play.fill")
-                                }
-                                .font(.caption.bold())
-                                if let sourceURL = URL(string: candidate.source_url) {
-                                    Link("Оператор", destination: sourceURL)
-                                }
-                                if let catalogURL = URL(string: candidate.catalog_url) {
-                                    Link("Каталог", destination: catalogURL)
-                                }
-                                if let streamListURL = URL(string: candidate.stream_list_url) {
-                                    Link("Список HLS", destination: streamListURL)
-                                }
-                                Spacer()
-                                if api.cameras.contains(where: { $0.url == candidate.url }) {
-                                    Label("Добавлена", systemImage: "checkmark.circle.fill")
-                                        .font(.caption).foregroundStyle(.green)
-                                } else if candidateProgressID == candidate.id {
-                                    ProgressView()
-                                } else if !api.isConnected {
-                                    Label("AI требует backend", systemImage: "server.rack")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                } else {
-                                    Button("Добавить и проверить") {
-                                        addAndCheck(candidate)
-                                    }
-                                    .font(.caption.bold())
-                                }
-                            }
-                            if let result = candidateResults[candidate.id] {
-                                Text(result).font(.caption).foregroundStyle(.secondary)
+                if api.isConnected {
+                    Section("Камеры дополнительного AI-сервера") {
+                        ForEach(api.cameras) { camera in
+                            NavigationLink {
+                                CameraDetailView(api: api, camera: camera)
+                            } label: {
+                                Label(camera.name, systemImage: "video")
                             }
                         }
-                        .padding(.vertical, 5)
-                    }
-                    if !candidateLoading && candidates.isEmpty && candidateError == nil {
-                        Text("Публичные кандидаты не найдены.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section("Природные территории") {
-                    Text("«Акжайык»: в публикации от июня 2025 года указана открытая трансляция с наблюдательных вышек. Текущий статус эфира не подтверждён; ссылка может открыть запись.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    if let videoURL = URL(string: PublicCameraCatalog.akzhaiykVideoURL) {
-                        Link(destination: videoURL) {
-                            Label("Открыть видео «Акжайык» на YouTube", systemImage: "play.rectangle")
-                        }
-                    }
-                    if let announcementURL = URL(string: PublicCameraCatalog.akzhaiykAnnouncementURL) {
-                        Link("Источник и описание трансляции", destination: announcementURL)
-                    }
-                    Text("Видео открывается у издателя. Автоматический анализ YouTube-потока в FireWatch не выполняется.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if api.isConnected && api.cameras.isEmpty {
-                    Section {
-                        ContentUnavailableView("Камеры не добавлены", systemImage: "video.slash",
-                            description: Text("Добавьте разрешённый HLS/RTSP-поток или выберите публичный кандидат выше."))
-                            .frame(minHeight: 100)
-                    }
-                }
-                ForEach(api.cameras) { camera in
-                    NavigationLink {
-                        CameraDetailView(api: api, camera: camera)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "video.fill")
-                                .foregroundStyle(camera.status == "online" ? .green : camera.status == "offline" ? .red : .secondary)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(camera.name).font(.headline)
-                                Text(camera.status == "online" ? "Онлайн при последней проверке" : camera.status == "offline" ? "Недоступна при последней проверке" : "Ещё не проверена")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                        Button {
+                            showingServerAdd = true
+                        } label: {
+                            Label("Добавить камеру для AI", systemImage: "plus")
                         }
                     }
                 }
             }
-
-            .navigationTitle("Камеры")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if api.isConnected {
-                        Button { showingAdd = true } label: { Image(systemName: "plus") }
-                    }
-                }
+            .navigationTitle("Камеры Казахстана")
+            .sheet(isPresented: $showingLocalAdd) {
+                AddLocalHLSCameraView(store: localStore)
             }
-            .sheet(isPresented: $showingAdd) { AddCameraView(api: api) }
-            .sheet(isPresented: $showingLocalAdd) { AddLocalHLSCameraView(store: localStore) }
-            .task { await loadCandidates() }
+            .sheet(isPresented: $showingServerAdd) {
+                AddCameraView(api: api)
+            }
+            .task {
+                await availability.refresh(PublicCameraCatalog.candidates)
+            }
             .refreshable {
-                await api.refresh()
-                await loadCandidates()
+                await availability.refresh(PublicCameraCatalog.candidates)
+                if api.isConnected { await api.refresh() }
             }
         }
     }
 }
 
-private struct PublicCameraDetailView: View {
+struct PublicCameraDetailView: View {
     let candidate: CameraCandidate
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let url = URL(string: candidate.url) {
                     DirectHLSPlayer(url: url)
                 } else {
-                    ContentUnavailableView("Поток не открылся", systemImage: "video.slash",
-                        description: Text("Проверьте ссылку у оператора. Встроенный каталог не проверяет доступность потока в реальном времени."))
+                    ContentUnavailableView("Ссылка на поток недействительна",
+                        systemImage: "video.slash",
+                        description: Text("Источник сейчас недоступен."))
                         .frame(height: 250)
                 }
-
                 Text(candidate.name).font(.title3.bold())
-                Label("Открытый HLS-поток · просмотр напрямую", systemImage: "globe")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Text("Для просмотра этого публичного видео сервер FireWatch не нужен. Проверка камеры через FFmpeg, AI-анализ кадра, сохранение событий и непрерывный мониторинг требуют подключённого backend.")
+                Label("Прямой HLS · просмотр внутри FireWatch", systemImage: "play.rectangle")
+                    .font(.subheadline)
+                Text("Источник: \(candidate.source_name)")
                     .font(.footnote)
-                Text("Доступность трансляции, задержка и разрешение на автоматический анализ зависят от оператора. Этот городской поток не является лесным постом наблюдения.")
-                    .font(.footnote).foregroundStyle(.secondary)
-
-                LabeledContent("Координаты", value: "\(candidate.lat), \(candidate.lon)")
-                if let url = URL(string: candidate.source_url) {
-                    Link("Открыть страницу оператора", destination: url)
-                }
-                if let url = URL(string: candidate.catalog_url) {
-                    Link("Источник каталога и расположения", destination: url)
-                }
-                if let url = URL(string: candidate.url) {
-                    Link("Открыть прямую ссылку HLS", destination: url)
-                }
+                    .foregroundStyle(.secondary)
+                LabeledContent("Координаты каталога", value: "\(candidate.lat), \(candidate.lon)")
+                Text("Никакой сервер FireWatch для просмотра не требуется. Если оператор отключил трансляцию, видео не загрузится. Просмотр не даёт разрешения на сохранение кадров или AI-анализ.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             .padding()
         }
-        .navigationTitle("Публичная камера")
+        .navigationTitle("Прямой эфир")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

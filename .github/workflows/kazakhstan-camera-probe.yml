@@ -1,0 +1,42 @@
+name: Kazakhstan public HLS availability audit
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'FireWatchNative/FireWatchNative/PublicCameraCatalog.swift'
+      - '.github/workflows/kazakhstan-camera-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check published HLS playlists (no video recording)
+        run: |
+          python3 - <<'PY'
+          import concurrent.futures, pathlib, re, urllib.error, urllib.request
+          source = pathlib.Path('FireWatchNative/FireWatchNative/PublicCameraCatalog.swift').read_text()
+          urls = sorted(set(re.findall(r'url: "(https://[^" ]+\.m3u8)"', source)))
+          if not urls:
+              raise SystemExit('No HTTPS HLS links in bundled Kazakhstan catalogue')
+
+          def check(url):
+              req = urllib.request.Request(url, headers={
+                  'Accept': 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+                  'User-Agent': 'FireWatchAvailabilityProbe/1.0'
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=8) as response:
+                      manifest = response.read(4096)
+                      ok = response.status == 200 and manifest.lstrip().startswith(b'#EXTM3U')
+                      return url, ok, 'HTTP ' + str(response.status)
+              except (urllib.error.URLError, TimeoutError, OSError) as error:
+                  return url, False, type(error).__name__
+
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+              results = list(pool.map(check, urls))
+          for url, available, reason in results:
+              print(('PLAYLIST REACHABLE' if available else 'NOT VERIFIED') + ' | ' + url + ' | ' + reason)
+          print(f'Accessible HLS playlists from this runner: {sum(row[1] for row in results)}/{len(urls)}')
+          print('A responding playlist is not proof that video frames play on iPhone or that automated AI use is permitted.')
+          PY

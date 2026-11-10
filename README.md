@@ -24,6 +24,14 @@ Without configuring any FireWatch server, you can:
 
 **Caution:** Candidate listings are *not* proof of live availability, operator permission for automated analysis, or forestry coverage. The built-in Aktau cameras show city/coast views rather than dedicated forest monitoring towers. Network access is still needed to watch the streams.
 
+## Kazakhstan-only live camera catalogue (no external redirect)
+
+The Cameras tab lists only Kazakhstan public HLS candidates. An entry opens **inside the SwiftUI app** in an AVPlayer-based screen; the primary camera row does not open Safari or a catalog site. The Akzhaiyk video (YouTube) opens an embedded player in-app, subject to the publisher allowing embeds.
+
+The curated list includes 7 published XCOM Aktau HLS streams. A GitHub Actions HTTP playlist audit on 10 November 2026 found 7 responding playlists out of 8 candidates; the failing Caspian 4th microdistrict URL was excluded. XCOM's own page currently labels amphitheater 15A/15B and Yntymak Square as "online". These results are **point-in-time checks from the GitHub runner**, not real iPhone frame-playback verification. Camera availability is **not** hard-coded as online: the app probes each .m3u8 playlist over HTTPS at runtime, places responding manifests in a separate section, and leaves failures accessible for manual retry. A successful playlist probe does not prove that video segments can be decoded, that a stream will remain online, or that the operator approves automated AI analysis.
+
+The publicly listed HLS URLs are dependent on independent providers; FireWatch cannot guarantee uptime or work around access controls. Using the app to view them needs internet, but no FireWatch server. Sources: https://xcom.kz/cam/ and https://pikniktv.info/viewtopic.php?start=50&t=9395.
+
 ## What requires the optional backend?
 
 The existing backend/ directory is retained because real YOLOv8n fire/smoke inference currently runs there, not on the iPhone. Running FireWatch without a backend **does not provide automatic fire detection, incident persistence, stream scanning or remote push alerts**.

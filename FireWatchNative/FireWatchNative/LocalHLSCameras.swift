@@ -233,46 +233,64 @@ final class HLSPlaybackController: ObservableObject {
 /// AVPlayer opens HLS directly without any FireWatch API or proxy.
 struct DirectHLSPlayer: View {
     let url: URL
+    /// Compact embeds show *only* the 250-point video surface, not captions.
+    /// The old DEMO effect mistakenly anchored to the captions' bottom edge.
+    var compact: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var playback = HLSPlaybackController()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let player = playback.player {
-                VideoPlayer(player: player)
+            ZStack(alignment: .bottom) {
+                if let player = playback.player {
+                    VideoPlayer(player: player)
+                        .frame(height: 250)
+                } else {
+                    ContentUnavailableView(
+                        playback.phase == .failed ? "Камера недоступна" : "Подключаем камеру",
+                        systemImage: playback.phase == .failed ? "wifi.exclamationmark" : "video",
+                        description: Text(playback.message)
+                    )
                     .frame(height: 250)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            } else {
-                ContentUnavailableView(
-                    playback.phase == .failed ? "Камера недоступна" : "Подключаем камеру",
-                    systemImage: playback.phase == .failed ? "wifi.exclamationmark" : "video",
-                    description: Text(playback.message)
-                )
-                .frame(height: 250)
+                }
+                if compact && playback.phase == .failed {
+                    Button {
+                        playback.retry()
+                    } label: {
+                        Label("Повторить соединение", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(12)
+                }
             }
-            if playback.phase != .failed {
-                Text(playback.message)
-                    .font(.caption)
+            .frame(maxWidth: .infinity)
+            .frame(height: 250)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            if !compact {
+                if playback.phase != .failed {
+                    Text(playback.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        playback.retry()
+                    } label: {
+                        Label("Повторить подключение", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Text("Соединение проверяется при открытии. Просмотр требует интернета; поток может быть отключён оператором.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            if playback.phase == .failed {
-                Button {
-                    playback.retry()
-                } label: {
-                    Label("Повторить подключение", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            Text("Соединение проверяется при открытии. Просмотр требует интернета; поток может быть отключён оператором.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .onAppear {
             if scenePhase == .active { playback.start(url) }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { playback.start(url) }
-            else { playback.stop() } // Don't stream while the app is backgrounded.
+            else { playback.stop() }
         }
         .onDisappear { playback.stop() }
     }

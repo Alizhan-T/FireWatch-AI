@@ -111,6 +111,15 @@ struct MonitoringStatus: Decodable {
     let cameras_configured: Int?
 }
 
+struct DetectionBox: Decodable {
+    let label: String
+    let confidence: Double
+    let x1: Double
+    let y1: Double
+    let x2: Double
+    let y2: Double
+}
+
 struct DetectionSummary: Decodable {
     let id: String
     let status: String
@@ -122,6 +131,7 @@ struct DetectionSummary: Decodable {
     let incident_id: String?
     let image_url: String
     let annotated_image_url: String?
+    let boxes: [DetectionBox]?
     let processing_ms: Int
     let created_at: String
 }

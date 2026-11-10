@@ -15,20 +15,28 @@ struct DetectionView: View {
     @State private var localError: String?
     @State private var localAnalyzing = false
 
+    private var realServerAvailable: Bool {
+        api.isConnected && api.health?.detector?.mode == "real_model"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("AI-анализ изображения").font(.title2.bold())
-                    Text("Загрузите фотографию для анализа. Выберите только город — координаты проставятся автоматически. Сейчас реальная модель YOLO работает через дополнительный AI-сервер.")
+                    Text("Выберите фотографию или стоп-кадр. ИИ ищет только признаки огня и дыма, не определяет причину и не подтверждает происшествие. Для точного вывода требуется проверка оператором.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     if !api.isConnected {
                         Label("AI-сервер не подключён. Выбор фото доступен, но реальная нейросетевая проверка без Core ML пока недоступна.",
                               systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
-                    } else if api.health?.detector?.mode != "real_model" {
-                        Label("Сервер использует демо-режим. Это не подтверждённая детекция.",
-                              systemImage: "info.circle")
+                    } else if realServerAvailable {
+                        Label("Подключён YOLO AI-сервер: анализ реальной моделью, результат предварительный.",
+                              systemImage: "checkmark.shield")
+                            .font(.footnote).foregroundStyle(.green)
+                    } else {
+                        Label("DEMO-режим сервера: цветовая эвристика, НЕ нейросеть. Она не может подтвердить пожар.",
+                              systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
                     }
                     PhotosPicker(selection: $selected, matching: .images) {
@@ -71,12 +79,20 @@ struct DetectionView: View {
                                     .font(.footnote).foregroundStyle(.secondary)
                             }
                             if let localResult {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Label("Результат Core ML: \(localResult.classification)",
+                                let kind = localResult.fireDetected && localResult.smokeDetected ? "fire_smoke" :
+                                    (localResult.fireDetected ? "fire" : (localResult.smokeDetected ? "smoke" : "none"))
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Label("Core ML · \(AIFireAssessment.headline(for: kind))",
                                           systemImage: "cpu.fill")
                                         .font(.headline)
-                                    Text("Уверенность: \(Int(localResult.confidence * 100))% · объектов: \(localResult.objectCount)")
-                                    Text("Одиночное фото, порог 65%. Результат предварительный и требует подтверждения человеком. DEMO-событие отдельно создаётся во вкладке «События».")
+                                    Text(AIFireAssessment.evidence(for: kind))
+                                        .font(.subheadline)
+                                    Text(AIFireAssessment.score(Double(localResult.confidence),
+                                                                mode: "real_model", classification: kind))
+                                        .font(.footnote)
+                                    Text("Объектов выше порога 65%: \(localResult.objectCount)")
+                                        .font(.footnote)
+                                    Text(AIFireAssessment.action(for: kind, mode: "real_model"))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 .padding()
@@ -86,7 +102,12 @@ struct DetectionView: View {
                                 Text(localError).font(.caption).foregroundStyle(.orange)
                             }
                         }
-                        Toggle("Создать инцидент при обнаружении огня/дыма", isOn: $saveIncident)
+                        Toggle("Создать инцидент при обнаружении моделью", isOn: $saveIncident)
+                            .disabled(!realServerAvailable)
+                        if !realServerAvailable {
+                            Text("Автоматическое создание инцидента отключено в DEMO-режиме. Оператор может отдельно добавить ручное событие.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         if saveIncident {
                             Picker("Город Казахстана", selection: $cityID) {
                                 ForEach(KazakhstanCities.all) { city in
@@ -96,23 +117,27 @@ struct DetectionView: View {
                             Text("Событие появится приблизительно в центре города. Это не точная геолокация пожара.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Button(analyzing ? "Анализ..." : "Проверить на огонь и дым") {
+                        Button(analyzing ? "ИИ анализирует кадр…" :
+                               (realServerAvailable ? "Анализировать через YOLO" : "Демо-анализ цвета")) {
                             let city = KazakhstanCities.find(cityID)
-                            let lat: Double? = saveIncident ? city.lat : nil
-                            let lon: Double? = saveIncident ? city.lon : nil
+                            let shouldSave = saveIncident && realServerAvailable
+                            let lat: Double? = shouldSave ? city.lat : nil
+                            let lon: Double? = shouldSave ? city.lon : nil
                             Task {
                                 guard let jpeg = image.jpegData(compressionQuality: 0.8) else {
                                     error = "Не удалось подготовить фотографию."
                                     return
                                 }
                                 analyzing = true
+                                result = nil
+                                error = nil
                                 do {
                                     result = try await api.detect(
                                         jpeg: jpeg,
-                                        saveIncident: saveIncident,
+                                        saveIncident: shouldSave,
                                         latitude: lat,
                                         longitude: lon,
-                                        locationName: saveIncident ? "\(city.name) (координаты центра города)" : nil
+                                        locationName: shouldSave ? "\(city.name) (координаты центра города)" : nil
                                     )
                                     error = nil
                                 } catch {
@@ -122,7 +147,7 @@ struct DetectionView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(analyzing || !api.isConnected)
+                        .disabled(analyzing || localAnalyzing || !api.isConnected)
                     }
                     if let result {
                         ProtectedMediaImage(
@@ -132,19 +157,42 @@ struct DetectionView: View {
                         .frame(maxHeight: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         VStack(alignment: .leading, spacing: 10) {
-                            Label(result.classification == "none" ? "Объекты не обнаружены" : "Обнаружено: \(result.classification)", systemImage: result.classification == "none" ? "checkmark.shield" : "exclamationmark.triangle")
+                            Label(AIFireAssessment.headline(for: result.classification),
+                                  systemImage: result.classification == "none" ?
+                                      "viewfinder" : "exclamationmark.triangle.fill")
                                 .font(.headline)
-                            Text("Уверенность: \(Int(result.confidence * 100))%")
-                            Text("Режим: \(result.mode)")
+                            Text(AIFireAssessment.status(mode: result.mode))
+                                .font(.subheadline.bold())
+                                .foregroundStyle(result.mode == "real_model" ? .green : .orange)
+                            Text(AIFireAssessment.evidence(for: result.classification))
+                                .font(.subheadline)
+                            Text(AIFireAssessment.score(result.confidence, mode: result.mode,
+                                                       classification: result.classification))
+                                .font(.footnote)
                             Text("Модель: \(result.model_name)")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Text("Обработка: \(result.processing_ms) мс")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let boxes = result.boxes, !boxes.isEmpty {
+                                Text("Выделено областей: \(boxes.count)")
+                                    .font(.footnote.bold())
+                                ForEach(boxes.indices, id: \.self) { index in
+                                    let object = boxes[index]
+                                    let name = object.label == "fire" ? "Огонь" :
+                                        (object.label == "smoke" ? "Дым" : "Неизвестный класс")
+                                    Text(result.mode == "real_model" ?
+                                         "\(name) · score \(Int((object.confidence * 100).rounded()))%" :
+                                         "\(name) · цветовое совпадение (DEMO)")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(AIFireAssessment.action(for: result.classification, mode: result.mode))
+                                .font(.footnote)
                             Text(result.disclaimer).font(.caption).foregroundStyle(.secondary)
                             if let incidentID = result.incident_id {
-                                Label("Инцидент создан: \(incidentID)", systemImage: "checkmark.circle.fill")
+                                Label("Создано событие на проверку: \(incidentID)",
+                                      systemImage: "checkmark.circle.fill")
                                     .font(.caption).foregroundStyle(.green)
-                            }
-                            if result.mode != "real_model" {
-                                Text("ВНИМАНИЕ: демонстрационная эвристика — не подтверждённая AI-детекция.")
-                                    .font(.caption.bold()).foregroundStyle(.orange)
                             }
                         }.padding().frame(maxWidth: .infinity, alignment: .leading)
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))

@@ -11,6 +11,32 @@ enum PublicCameraCatalog {
 
     static let candidates: [CameraCandidate] = [
         CameraCandidate(
+            id: "almaty-shymbulak-1",
+            name: "Алматы — Шымбулак, камера 1 · проверка",
+            url: "https://ipcam.kz/cam1/tracks-v1/mono.m3u8",
+            lat: 43.128,
+            lon: 77.080,
+            source_name: "IPcam.kz · опубликованный HLS",
+            source_url: "https://ipcam.kz/",
+            catalog_url: "https://cam-world.ru/geo/asia/kazahstan/almaty",
+            stream_list_url: streamListURL,
+            verification_note: "Исторически опубликованный URL. Наличие HTTPS, актуальный поток и право на AI-анализ не подтверждены.",
+            verified: false
+        ),
+        CameraCandidate(
+            id: "almaty-shymbulak-6",
+            name: "Алматы — Шымбулак, камера 6 · проверка",
+            url: "https://ipcam.kz/cam6/tracks-v1/mono.m3u8",
+            lat: 43.128,
+            lon: 77.080,
+            source_name: "IPcam.kz · опубликованный HLS",
+            source_url: "https://ipcam.kz/",
+            catalog_url: "https://cam-world.ru/geo/asia/kazahstan/almaty",
+            stream_list_url: streamListURL,
+            verification_note: "Исторически опубликованный URL. Работоспособность в 2026 не подтверждена.",
+            verified: false
+        ),
+        CameraCandidate(
             id: "aktau-amphitheater-a",
             name: "Актау — амфитеатр 15A",
             url: "https://cam.xcom.kz:8081/amfiteatr15a/tracks-v1/mono.m3u8",

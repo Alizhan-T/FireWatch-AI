@@ -9,6 +9,7 @@ struct PublishedWebCamera: Identifiable {
     let name: String
     let pageURL: URL
     let reliabilityNote: String
+    var youtubeVideoID: String? = nil
 
     var city: KazakhstanCity { KazakhstanCities.find(cityID) }
 }
@@ -25,9 +26,31 @@ enum KazakhstanPublisherCameras {
         .init(
             id: "almaty-shymbulak",
             cityID: "almaty",
-            name: "Алматы — Шымбулак",
+            name: "Алматы — Шымбулак · официальный источник",
             pageURL: URL(string: "https://shymbulak.com/live")!,
-            reliabilityNote: "Страница трансляций курорта. Прямая ссылка HLS не подтверждена; сайт может ограничивать встроенное воспроизведение."
+            reliabilityNote: "Официальная страница Шымбулака. Успех встроенного воспроизведения зависит от оператора."
+        ),
+        .init(
+            id: "almaty-shymbulak-alt",
+            cityID: "almaty",
+            name: "Алматы — Шымбулак · камера 1",
+            pageURL: URL(string: "https://cam-world.ru/cams/gornolyzhnyy-kurort-shymbulak-almaty-kamera-1-00031157")!,
+            reliabilityNote: "Альтернативная страница опубликованного HLS-источника. Прямой поток и воспроизведение в WKWebView не подтверждены."
+        ),
+        .init(
+            id: "almaty-shymbulak-alt4",
+            cityID: "almaty",
+            name: "Алматы — Шымбулак · камера 4",
+            pageURL: URL(string: "https://cam-world.ru/cams/gornolyzhnyy-kurort-shymbulak-almaty-kamera-4-00031182")!,
+            reliabilityNote: "Альтернативная страница источника; доступность видео на iPhone не проверена."
+        ),
+        .init(
+            id: "astana-atameken-live",
+            cityID: "astana",
+            name: "Астана — городской прямой эфир Atameken Business",
+            pageURL: URL(string: "https://www.youtube.com/live/FKT8MiiKQG4")!,
+            reliabilityNote: "Публичный эфир столицы Atameken Business, опубликован 28.01.2026. Встраивание и актуальный LIVE-статус на iPhone не подтверждены.",
+            youtubeVideoID: "FKT8MiiKQG4"
         )
     ]
 }
@@ -62,11 +85,23 @@ private struct InAppPublisherPage: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            // Allow linked video players/embedded subframes; do not open Safari.
-            // The initial provider site remains the only top-level page.
-            if navigationAction.targetFrame?.isMainFrame == true,
-               let destination = navigationAction.request.url,
-               destination.host?.lowercased() != startURL.host?.lowercased() {
+            // Some publisher embeds redirect top-level to a player host.
+            // Keep browsing in-app, restrict it to HTTPS publisher/video hosts.
+            guard navigationAction.targetFrame?.isMainFrame == true,
+                  let destination = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let host = destination.host?.lowercased() ?? ""
+            let trusted = [
+                startURL.host?.lowercased() ?? "",
+                "www.youtube.com", "youtube.com", "m.youtube.com",
+                "www.youtube-nocookie.com", "youtube-nocookie.com",
+                "gorset.kz", "www.gorset.kz",
+                "ipcam.kz", "www.ipcam.kz",
+                "player.vimeo.com", "shymbulak.com", "www.shymbulak.com"
+            ]
+            guard destination.scheme == "https", trusted.contains(host) else {
                 decisionHandler(.cancel)
                 return
             }
@@ -77,21 +112,39 @@ private struct InAppPublisherPage: UIViewRepresentable {
 
 struct PublisherCameraDetailView: View {
     let camera: PublishedWebCamera
+    @State private var reloadID = UUID()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(camera.name)
-                .font(.title3.bold())
-                .padding(.horizontal)
-            Text("Источник открыт в FireWatch. Это не прямой HLS и не подтверждённое воспроизведение: сайт может заблокировать видео внутри iPhone.")
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding(.horizontal)
-            InAppPublisherPage(url: camera.pageURL)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Text(camera.reliabilityNote)
-                .font(.caption).foregroundStyle(.orange)
-                .padding(.horizontal)
-                .padding(.bottom, 12)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(camera.name)
+                    .font(.title3.bold())
+                if let videoID = camera.youtubeVideoID {
+                    EmbeddedYouTubePlayer(videoID: videoID)
+                        .frame(height: 270)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else {
+                    InAppPublisherPage(url: camera.pageURL)
+                        .id(reloadID)
+                        .frame(height: 380)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                Label("Публикация оператора · статус LIVE не гарантирован", systemImage: "video")
+                    .font(.subheadline)
+                Text(camera.reliabilityNote)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                Button {
+                    reloadID = UUID()
+                } label: {
+                    Label("Повторить загрузку источника", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                Text("Камера открывается внутри FireWatch. Оператор может отключить эфир или запретить встраивание. Без прямого разрешённого HLS-потока приложение не может восстановить недоступную трансляцию.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
         }
         .navigationTitle(camera.city.name)
         .navigationBarTitleDisplayMode(.inline)

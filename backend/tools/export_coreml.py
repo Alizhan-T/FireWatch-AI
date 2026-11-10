@@ -5,6 +5,7 @@ Run on macOS with the Python dependencies installed; not part of normal builds.
 The .mlpackage must be validated before it is shipped as a safety feature.
 """
 from pathlib import Path
+import json
 import shutil
 
 root = Path(__file__).resolve().parents[2]
@@ -20,9 +21,9 @@ except ImportError as exc:
     raise SystemExit("Install first: python3 -m pip install ultralytics coremltools") from exc
 
 model = YOLO(str(source))
-names = {str(name).strip().lower() for name in model.names.values()}
-if names != {"fire", "smoke"}:
-    raise SystemExit(f"Unexpected model classes {names!r}. Refuse unsafe label mapping.")
+labels_by_id = {str(index): str(name).strip().lower() for index, name in model.names.items()}
+if set(labels_by_id.values()) != {"fire", "smoke"}:
+    raise SystemExit(f"Unexpected model class labels {labels_by_id!r}. Refuse unsafe mapping.")
 
 print("Exporting YOLOv8 detection model with built-in NMS for Vision...")
 exported = Path(model.export(format="coreml", imgsz=640, nms=True, device="cpu", batch=1))
@@ -32,6 +33,11 @@ destination.parent.mkdir(parents=True, exist_ok=True)
 if destination.exists():
     shutil.rmtree(destination)
 shutil.copytree(exported, destination)
+# Vision sometimes returns numeric identifiers; this file maps them from
+# the CHECKPOINT's actual class order, never assumed 0=fire, 1=smoke.
+label_file = destination.parent / "fire_smoke_yolov8n_labels.json"
+label_file.write_text(json.dumps(labels_by_id, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(f"Core ML model ready for Xcode: {destination}")
+print(f"Verified detector class mapping: {label_file} -> {labels_by_id}")
 print("Next: regenerate XcodeGen project, build on a physical iPhone, validate on diverse labelled fire/non-fire images.")
 print("WARNING: Export does NOT establish real-world detection accuracy or automatic 24/7 monitoring.")

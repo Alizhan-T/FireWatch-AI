@@ -130,7 +130,7 @@ struct CameraLibraryView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Label(camera.name, systemImage: "video")
                                         .font(.subheadline.bold())
-                                    Text("Не подтверждён прямой HLS · (camera.city.name)")
+                                    Text("Не подтверждён прямой HLS · \(camera.city.name)")
                                         .font(.caption)
                                         .foregroundStyle(.orange)
                                 }

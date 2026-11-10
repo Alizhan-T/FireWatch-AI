@@ -9,6 +9,7 @@ struct PublishedWebCamera: Identifiable {
     let name: String
     let pageURL: URL
     let reliabilityNote: String
+    var youtubeVideoID: String? = nil
 
     var city: KazakhstanCity { KazakhstanCities.find(cityID) }
 }
@@ -25,9 +26,31 @@ enum KazakhstanPublisherCameras {
         .init(
             id: "almaty-shymbulak",
             cityID: "almaty",
-            name: "Алматы — Шымбулак",
+            name: "Алматы — Шымбулак · официальный источник",
             pageURL: URL(string: "https://shymbulak.com/live")!,
-            reliabilityNote: "Страница трансляций курорта. Прямая ссылка HLS не подтверждена; сайт может ограничивать встроенное воспроизведение."
+            reliabilityNote: "Официальная страница Шымбулака. Успех встроенного воспроизведения зависит от оператора."
+        ),
+        .init(
+            id: "almaty-shymbulak-alt",
+            cityID: "almaty",
+            name: "Алматы — Шымбулак · камера 1",
+            pageURL: URL(string: "https://cam-world.ru/cams/gornolyzhnyy-kurort-shymbulak-almaty-kamera-1-00031157")!,
+            reliabilityNote: "Альтернативная страница опубликованного HLS-источника. Прямой поток и воспроизведение в WKWebView не подтверждены."
+        ),
+        .init(
+            id: "almaty-shymbulak-alt4",
+            cityID: "almaty",
+            name: "Алматы — Шымбулак · камера 4",
+            pageURL: URL(string: "https://cam-world.ru/cams/gornolyzhnyy-kurort-shymbulak-almaty-kamera-4-00031182")!,
+            reliabilityNote: "Альтернативная страница источника; доступность видео на iPhone не проверена."
+        ),
+        .init(
+            id: "astana-atameken-live",
+            cityID: "astana",
+            name: "Астана — городской прямой эфир Atameken Business",
+            pageURL: URL(string: "https://www.youtube.com/live/FKT8MiiKQG4")!,
+            reliabilityNote: "Публичный эфир столицы Atameken Business, опубликован 28.01.2026. Встраивание и актуальный LIVE-статус на iPhone не подтверждены.",
+            youtubeVideoID: "FKT8MiiKQG4"
         )
     ]
 }
@@ -36,6 +59,8 @@ enum KazakhstanPublisherCameras {
 /// its protected stream. Video playback may still depend on website policies.
 private struct InAppPublisherPage: UIViewRepresentable {
     let url: URL
+    @Binding var isLoading: Bool
+    @Binding var errorMessage: String?
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -48,7 +73,9 @@ private struct InAppPublisherPage: UIViewRepresentable {
         return view
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(startURL: url) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(startURL: url, isLoading: $isLoading, errorMessage: $errorMessage)
+    }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
@@ -58,15 +85,55 @@ private struct InAppPublisherPage: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         let startURL: URL
-        init(startURL: URL) { self.startURL = startURL }
+        let isLoading: Binding<Bool>
+        let errorMessage: Binding<String?>
+
+        init(startURL: URL, isLoading: Binding<Bool>, errorMessage: Binding<String?>) {
+            self.startURL = startURL
+            self.isLoading = isLoading
+            self.errorMessage = errorMessage
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            isLoading.wrappedValue = true
+            errorMessage.wrappedValue = nil
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isLoading.wrappedValue = false
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            isLoading.wrappedValue = false
+            errorMessage.wrappedValue = "Источник не загрузился: \(error.localizedDescription)"
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            isLoading.wrappedValue = false
+            errorMessage.wrappedValue = "Не удалось подключиться: \(error.localizedDescription)"
+        }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            // Allow linked video players/embedded subframes; do not open Safari.
-            // The initial provider site remains the only top-level page.
-            if navigationAction.targetFrame?.isMainFrame == true,
-               let destination = navigationAction.request.url,
-               destination.host?.lowercased() != startURL.host?.lowercased() {
+            // Some publisher embeds redirect top-level to a player host.
+            // Keep browsing in-app, restrict it to HTTPS publisher/video hosts.
+            guard navigationAction.targetFrame?.isMainFrame == true,
+                  let destination = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let host = destination.host?.lowercased() ?? ""
+            let trusted = [
+                startURL.host?.lowercased() ?? "",
+                "www.youtube.com", "youtube.com", "m.youtube.com",
+                "www.youtube-nocookie.com", "youtube-nocookie.com",
+                "gorset.kz", "www.gorset.kz",
+                "ipcam.kz", "www.ipcam.kz",
+                "player.vimeo.com", "shymbulak.com", "www.shymbulak.com"
+            ]
+            guard destination.scheme == "https", trusted.contains(host) else {
+                errorMessage.wrappedValue = "Видеоплеер запросил внешний переход, который недоступен внутри приложения."
+                isLoading.wrappedValue = false
                 decisionHandler(.cancel)
                 return
             }
@@ -77,21 +144,53 @@ private struct InAppPublisherPage: UIViewRepresentable {
 
 struct PublisherCameraDetailView: View {
     let camera: PublishedWebCamera
+    @State private var reloadID = UUID()
+    @State private var pageLoading = true
+    @State private var loadError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(camera.name)
-                .font(.title3.bold())
-                .padding(.horizontal)
-            Text("Источник открыт в FireWatch. Это не прямой HLS и не подтверждённое воспроизведение: сайт может заблокировать видео внутри iPhone.")
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding(.horizontal)
-            InAppPublisherPage(url: camera.pageURL)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Text(camera.reliabilityNote)
-                .font(.caption).foregroundStyle(.orange)
-                .padding(.horizontal)
-                .padding(.bottom, 12)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(camera.name)
+                    .font(.title3.bold())
+                if let videoID = camera.youtubeVideoID {
+                    EmbeddedYouTubePlayer(videoID: videoID)
+                        .id(reloadID)
+                        .frame(height: 270)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else {
+                    InAppPublisherPage(url: camera.pageURL,
+                                       isLoading: $pageLoading,
+                                       errorMessage: $loadError)
+                        .id(reloadID)
+                        .frame(height: 380)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    if pageLoading {
+                        ProgressView("Подключаем страницу оператора…")
+                    }
+                    if let loadError {
+                        Label(loadError, systemImage: "wifi.exclamationmark")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                }
+                Label("Публикация оператора · статус LIVE не гарантирован", systemImage: "video")
+                    .font(.subheadline)
+                Text(camera.reliabilityNote)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                Button {
+                    loadError = nil
+                    pageLoading = true
+                    reloadID = UUID()
+                } label: {
+                    Label("Повторить загрузку источника", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                Text("Камера открывается внутри FireWatch. Оператор может отключить эфир или запретить встраивание. Без прямого разрешённого HLS-потока приложение не может восстановить недоступную трансляцию.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
         }
         .navigationTitle(camera.city.name)
         .navigationBarTitleDisplayMode(.inline)

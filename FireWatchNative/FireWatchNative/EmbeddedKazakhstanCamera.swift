@@ -3,7 +3,7 @@ import WebKit
 
 /// The publisher's YouTube embed stays inside the iPhone app.
 /// This does not bypass the publisher's embed settings or DRM restrictions.
-private struct EmbeddedYouTubePlayer: UIViewRepresentable {
+struct EmbeddedYouTubePlayer: UIViewRepresentable {
     let videoID: String
 
     func makeCoordinator() -> Coordinator { Coordinator() }

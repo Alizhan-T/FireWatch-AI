@@ -32,6 +32,20 @@ The curated list includes 7 published XCOM Aktau HLS streams. A GitHub Actions H
 
 The publicly listed HLS URLs are dependent on independent providers; FireWatch cannot guarantee uptime or work around access controls. Using the app to view them needs internet, but no FireWatch server. Sources: https://xcom.kz/cam/ and https://pikniktv.info/viewtopic.php?start=50&t=9395.
 
+## Kazakhstan city cameras and training SOS (November 2026)
+
+The camera picker now includes **Astana, Almaty, Semey and Aktau**:
+- Aktau: seven public direct HTTPS HLS streams.
+- Almaty: two *newly probed* Shymbulak HTTPS HLS streams and publisher alternatives. A GitHub Actions manifest test on 10 November 2026 received valid HLS playlists from **9/9** catalogue links (seven Aktau + two Almaty), but this is **not** proof that video segments render on a physical iPhone, that streams remain available, or that the operators permit automatic analysis.
+- Astana: a published Atameken Business city livestream shown inside the app using a YouTube embed; the owner may block embedding or terminate the live session.
+- Semey: the Central Square Geocam/gorset.kz publisher page is still marked *unstable* and may not play on an iPhone. There is no verified direct HLS for Semey yet.
+
+**DEMO simulation**: Choose «Имитировать пожар», select a city, and tap «Запустить DEMO». FireWatch opens a camera-backed training screen (defaults to a camera from the selected city if available; falls back to an available catalogue option), with an animated **artificial flame/smoke overlay** and persistent, unmissable «DEMO / НЕ РЕАЛЬНЫЙ ПОЖАР» label. The original stream is not changed or recorded. The actual camera city is shown separately from the simulated incident city to avoid confusion.
+
+Starting a DEMO requests iPhone notification permission when required and schedules a **local** «SOS · ДЕМО · УЧЕБНАЯ ТРЕВОГА» notification. Foreground banners are supported and there is a button to re-send the test. This is entirely on-device: no APNs/Firebase service, backend, emergency-number call, dispatch, broadcast or third-party message occurs. Denied permissions are reported inside the app. Manually entered non-DEMO events cannot produce this test SOS payload.
+
+Physical-device verification is still required for stream decoding, permissions and notifications. Real autonomous fire/smoke detection is **not implemented by this feature** and requires a separately evaluated Core ML model or the existing optional server. Public viewing alone does not authorize AI analysis of third-party feeds.
+
 ## What requires the optional backend?
 
 The existing backend/ directory is retained because real YOLOv8n fire/smoke inference currently runs there, not on the iPhone. Running FireWatch without a backend **does not provide automatic fire detection, incident persistence, stream scanning or remote push alerts**.

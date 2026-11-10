@@ -11,7 +11,12 @@ struct CameraLibraryView: View {
     @State private var cityFilter = "all"
 
     private var filteredDirectCameras: [CameraCandidate] {
-        cityFilter == "all" || cityFilter == "aktau" ? PublicCameraCatalog.candidates : []
+        switch cityFilter {
+        case "all": PublicCameraCatalog.candidates
+        case "almaty": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("almaty-") }
+        case "aktau": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("aktau-") }
+        default: []
+        }
     }
 
     private var filteredPublisherCameras: [PublishedWebCamera] {
@@ -70,12 +75,13 @@ struct CameraLibraryView: View {
                 Section("Казахстан · выбор города") {
                     Picker("Город", selection: $cityFilter) {
                         Text("Все города").tag("all")
+                        Text("Астана").tag("astana")
                         Text("Семей").tag("semey")
                         Text("Актау").tag("aktau")
                         Text("Алматы").tag("almaty")
                     }
                     .pickerStyle(.menu)
-                    Text("Прямые HLS-камеры открываются во встроенном плеере. Для Семея и Алматы пока доступны страницы источников внутри приложения, а не проверенные HLS-потоки.")
+                    Text("Актау: проверяемые HLS-потоки. Алматы: два новых HLS-кандидата и страницы Шымбулака. Астана: встроенный эфир Atameken Business. Семей: нестабильный источник без подтверждённого HLS.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
@@ -137,7 +143,7 @@ struct CameraLibraryView: View {
                                 .padding(.vertical, 4)
                             }
                         }
-                        Text("Семей: источник нестабилен, поэтому не отображается как гарантированно онлайн.")
+                        Text("Камеры без проверенной прямой HLS-ссылки показываются внутри приложения. Для Семея источник нестабилен; у Астаны и Алматы доступность зависит от видеоплеера владельца.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }

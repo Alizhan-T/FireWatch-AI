@@ -1,5 +1,16 @@
 # FireWatch Native — SwiftUI-only iOS client
 
+## November 2026 — lightweight native stability pass
+
+The iPhone application now launches as pure SwiftUI without the Firebase / APNs SDK. This removes optional remote-notification dependencies that added binary size and build time even though a free Apple Personal Team cannot enable the necessary Push Notifications entitlement. **Remote push and Firebase device registration are not part of this build**; camera viewing, local event reports and DEMO simulations still work.
+
+The dashboard is now camera-first, with a high-contrast action card, accurate source counts (catalogued, not claimed online), quick DEMO/manual event creation, and a smaller events preview. The optional FastAPI connection remains available for the existing server-side YOLO processing.
+
+An earlier user screenshot showed iOS terminating the app with **SIGKILL**. This alone does not establish a root cause; removing an unused Firebase dependency is preventive simplification, not proof of a crash fix. For physical-device diagnostics, inspect the iOS crash/termination report in Xcode Devices and Simulators and note its **Termination Reason**. CI simulator tests cannot reproduce every device-only termination.
+
+---
+
+
 ## November 2026: Cities, local events, icon, and Core ML
 
 **City-only forms.** In AI photo analysis and when registering a camera with the optional backend, choose a Kazakhstan city instead of latitude and longitude. Coordinates are assigned from the city centroid **only for rough display**. A centroid is NOT the actual location of a fire.
@@ -32,7 +43,7 @@ The exporter validates that the expected classes are fire and smoke and selects 
 
 This native SwiftUI application (iOS 17+) is the sole supported iPhone client. **A FireWatch backend is optional.** Generate the Xcode project with XcodeGen, open the app, and go to **Камеры** to watch the built-in public HLS camera candidates directly through AVPlayer. You may add personal HTTP(S) .m3u8 streams under **Мои HLS-камеры · без сервера**; they persist in UserDefaults on the iPhone. The map displays published camera coordinates even when no backend is configured.
 
-Public streams may be offline and their operators may prohibit automated processing. The app indicates AVPlayer preparation/failure, not guaranteed uptime. No realtime AI fire detection, incident database or Firebase push is provided in server-free mode.
+Public streams may be offline and their operators may prohibit automated processing. The app indicates AVPlayer preparation/failure, not guaranteed uptime. No realtime AI fire detection, incident database or remote push (disabled in Personal Team build) is provided in server-free mode.
 
 To opt into the existing remote AI features later, configure the optional backend using the instructions below. A future truly server-free detector will require a separately converted and validated Core ML model.
 
@@ -158,13 +169,13 @@ Implemented in this branch:
 - Camera registration/deletion, FFmpeg stream check, HLS playback and manual single-frame AI analysis.
 - Direct viewing of the bundled public HLS candidates without a backend; AI analysis and continuous monitoring still require the FastAPI backend.
 - Photo upload to YOLO backend, incident details/evidence, status update and deletion.
-- Optional Firebase Messaging integration, gated on the user's Firebase/APNs configuration.
+- Optional Firebase Messaging integration, gated on the user's optional remote push configuration.
 - GitHub Actions compile workflow and backend pytest workflow.
 
 Still requires deployment-specific setup and field verification:
 - Add permitted camera stream URLs and confirm each source is reachable from the backend.
 - Configure API key/HTTPS for any non-private network.
-- Configure Firebase/APNs for actual push delivery.
+- Configure optional remote push for actual push delivery.
 - Test on the target iPhone, local Wi-Fi and cellular network.
 - Run the 24-hour camera check on the deployed host; continuous monitoring, confirmation and status endpoints are implemented, but field uptime is not yet verified.
 

@@ -56,9 +56,9 @@ enum KazakhstanPublisherCameras {
         .init(
             id: "astana-khan-shatyr-publisher",
             cityID: "astana",
-            name: "Астана — Хан Шатыр · камера издателя",
-            pageURL: URL(string: "https://www.vision-environnement.com/ru/webcam/kazakhstan/astana/998-astana/")!,
-            reliabilityNote: "Альтернативная публичная страница камеры Хан Шатыр. Дата изображения и статус трансляции могут быть устаревшими; прямого разрешённого HLS-потока нет."
+            name: "Астана — Хан Шатыр · официальный сайт",
+            pageURL: URL(string: "https://www.khanshatyr.com/ru/camera")!,
+            reliabilityNote: "Официальный сайт ТРЦ «Хан Шатыр» с разделом Live камеры. Доступность самого видео в WebView не подтверждена; прямой разрешённый HLS-адрес не опубликован."
         )
     ]
 }

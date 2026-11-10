@@ -7,6 +7,7 @@ private struct TrainingCameraOption: Identifiable {
     let cityID: String
     let streamURL: URL?
     let youtubeID: String?
+    let publisherPageURL: URL?
 }
 
 struct DemoFireScenarioView: View {
@@ -17,6 +18,12 @@ struct DemoFireScenarioView: View {
     @StateObject private var savedCameras = LocalHLSCameraStore()
     @State private var chosenID: String = ""
     @State private var showFireEffect = true
+    @State private var fireHorizontalPosition = 0.58
+    @State private var fireScale = 0.65
+    @State private var fireVerticalPosition = 0.88
+    @State private var showSourceBrowser = false
+    @State private var publisherLoading = true
+    @State private var publisherError: String?
     @State private var notificationStatus = "Тестовые уведомления не отправляются службам спасения."
     @State private var didRequestNotification = false
     @Environment(\.dismiss) private var dismiss
@@ -36,7 +43,8 @@ struct DemoFireScenarioView: View {
                 city: candidate.id.hasPrefix("almaty-") ? "Алматы" : "Актау",
                 cityID: candidate.id.hasPrefix("almaty-") ? "almaty" : "aktau",
                 streamURL: url,
-                youtubeID: nil
+                youtubeID: nil,
+                publisherPageURL: nil
             )
         }
         let personal = savedCameras.cameras.compactMap { camera -> TrainingCameraOption? in
@@ -47,18 +55,19 @@ struct DemoFireScenarioView: View {
                 city: "Пользовательский источник",
                 cityID: "personal",
                 streamURL: url,
-                youtubeID: nil
+                youtubeID: nil,
+                publisherPageURL: nil
             )
         }
-        let publishedVideo = KazakhstanPublisherCameras.candidates.compactMap { camera -> TrainingCameraOption? in
-            guard let videoID = camera.youtubeVideoID else { return nil }
-            return TrainingCameraOption(
+        let publishedVideo = KazakhstanPublisherCameras.candidates.map { camera in
+            TrainingCameraOption(
                 id: "publisher.\(camera.id)",
                 title: camera.name,
                 city: camera.city.name,
                 cityID: camera.cityID,
                 streamURL: nil,
-                youtubeID: videoID
+                youtubeID: camera.youtubeVideoID,
+                publisherPageURL: camera.pageURL
             )
         }
         return publicOptions + publishedVideo + personal
@@ -112,39 +121,88 @@ struct DemoFireScenarioView: View {
                         }
                         .pickerStyle(.menu)
                         if let camera = selectedCamera {
-                            ZStack(alignment: .topLeading) {
+                            // The VFX is anchored to the 250-point VIDEO ONLY.
+                            // Camera status, descriptions and controls are outside this clipped stage.
+                            ZStack {
                                 if let url = camera.streamURL {
-                                    DirectHLSPlayer(url: url)
+                                    DirectHLSPlayer(url: url, compact: true)
                                         .id(camera.id)
                                 } else if let videoID = camera.youtubeID {
                                     EmbeddedYouTubePlayer(videoID: videoID)
-                                        .frame(height: 275)
+                                        .frame(height: 250)
                                         .id(camera.id)
-                                }
-                                VStack {
-                                    Text("DEMO · ВИЗУАЛЬНАЯ СИМУЛЯЦИЯ")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.white)
-                                        .padding(8)
-                                        .background(.red.opacity(0.95), in: Capsule())
-                                    Spacer()
-                                }
-                                .padding(10)
-                                .allowsHitTesting(false)
-
-                                if showFireEffect {
-                                    VStack {
-                                        Spacer()
-                                        HStack {
-                                            Spacer()
-                                            RealisticFireOverlay()
-                                        }
-                                    }
-                                    .padding(.bottom, 14)
+                                } else if let pageURL = camera.publisherPageURL {
+                                    InAppPublisherPage(url: pageURL,
+                                                       isLoading: $publisherLoading,
+                                                       errorMessage: $publisherError)
+                                        .frame(height: 250)
+                                        .id(camera.id)
+                                } else {
+                                    ContentUnavailableView("Нет встроенного видео",
+                                        systemImage: "video.slash",
+                                        description: Text("Откройте страницу владельца источника."))
                                 }
                             }
                             .frame(maxWidth: .infinity)
+                            .frame(height: 250)
+                            .overlay {
+                                if showFireEffect && (camera.streamURL != nil || camera.youtubeID != nil) {
+                                    GeometryReader { geometry in
+                                        // AVPlayer letterboxes landscape feeds. Keep
+                                        // fire on visible video, not the black bars.
+                                        let videoHeight = min(geometry.size.height,
+                                                              geometry.size.width * 9 / 16)
+                                        let topInset = (geometry.size.height - videoHeight) / 2
+                                        let baseline = topInset + videoHeight * CGFloat(fireVerticalPosition)
+                                        RealisticFireOverlay()
+                                            .scaleEffect(CGFloat(fireScale))
+                                            .position(
+                                                x: geometry.size.width * CGFloat(fireHorizontalPosition),
+                                                y: baseline - 117 * CGFloat(fireScale)
+                                            )
+                                            .mask {
+                                                Rectangle()
+                                                    .frame(width: geometry.size.width, height: videoHeight)
+                                                    .position(x: geometry.size.width / 2,
+                                                              y: geometry.size.height / 2)
+                                            }
+                                    }
+                                    .allowsHitTesting(false)
+                                }
+                            }
+                            .overlay(alignment: .topLeading) {
+                                Text("DEMO · ИСКУССТВЕННЫЙ ПОЖАР")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .padding(8)
+                                    .background(.red.opacity(0.95), in: Capsule())
+                                    .padding(10)
+                                    .allowsHitTesting(false)
+                            }
                             .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                            if camera.streamURL == nil && camera.youtubeID == nil {
+                                Label("Это страница оператора, а не прямое видео. VFX здесь отключён: нельзя накладывать огонь на интерфейс сайта.",
+                                      systemImage: "info.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let publisherError {
+                                    Text(publisherError).font(.caption).foregroundStyle(.orange)
+                                }
+                            }
+                            if let sourceURL = camera.publisherPageURL {
+                                Button {
+                                    showSourceBrowser = true
+                                } label: {
+                                    Label("Открыть видеосайт владельца внутри приложения",
+                                          systemImage: "globe")
+                                }
+                                .buttonStyle(.bordered)
+                                .sheet(isPresented: $showSourceBrowser) {
+                                    InAppCameraBrowser(url: sourceURL)
+                                        .ignoresSafeArea()
+                                }
+                            }
 
                             Label("Видео: \(camera.city). Учебное событие: \(event.city.name). Это могут быть разные города.", systemImage: "location.circle")
                                 .font(.caption.bold())
@@ -154,6 +212,25 @@ struct DemoFireScenarioView: View {
 
                     Toggle("Огонь и дым поверх камеры (VFX)", isOn: $showFireEffect)
                         .tint(.orange)
+                    if showFireEffect {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Положение огня по горизонтали")
+                                .font(.caption.bold())
+                            Slider(value: $fireHorizontalPosition, in: 0.22...0.78)
+                                .tint(.orange)
+                            Text("Высота огня на изображении")
+                                .font(.caption.bold())
+                            Slider(value: $fireVerticalPosition, in: 0.60...0.94)
+                                .tint(.orange)
+                            Text("Размер эффекта")
+                                .font(.caption.bold())
+                            Slider(value: $fireScale, in: 0.42...0.92)
+                                .tint(.orange)
+                            Text("Подберите положение по объектам камеры. Эффект не определяет реальное место возгорания.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Text("Если прямой HLS-поток недоступен, приложение честно покажет ошибку плеера. Анимация огня, дыма и отсветов создана программно. Она не изменяет исходное видео, не создаёт записи и не означает реального пожара.")
                         .font(.caption)

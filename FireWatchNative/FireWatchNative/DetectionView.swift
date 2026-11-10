@@ -26,16 +26,41 @@ struct DetectionView: View {
                     Text("AI-анализ изображения").font(.title2.bold())
                     Text("Выберите фотографию или стоп-кадр. ИИ ищет только признаки огня и дыма, не определяет причину и не подтверждает происшествие. Для точного вывода требуется проверка оператором.")
                         .font(.subheadline).foregroundStyle(.secondary)
+                    if OnDeviceFireDetector.isInstalled {
+                        Label("Core ML установлена на iPhone: анализ фотографий доступен без сервера.",
+                              systemImage: "checkmark.shield.fill")
+                            .font(.footnote).foregroundStyle(.green)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("На iPhone нет обученной модели Core ML.",
+                                  systemImage: "cpu")
+                                .font(.subheadline.bold())
+                            Text("Чтобы включить настоящую AI-детекцию без сервера, запустите на Mac из папки FireWatch-AI команду ниже, затем пересоберите приложение.")
+                                .font(.footnote)
+                            Text("bash FireWatchNative/tools/enable_ai_on_iphone.sh")
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            Button("Скопировать команду для Mac") {
+                                UIPasteboard.general.string = "bash FireWatchNative/tools/enable_ai_on_iphone.sh"
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    }
                     if !api.isConnected {
-                        Label("AI-сервер не подключён. Выбор фото доступен, но реальная нейросетевая проверка без Core ML пока недоступна.",
-                              systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange)
+                        Label(OnDeviceFireDetector.isInstalled ?
+                              "AI-сервер не подключён — используйте кнопку Core ML после выбора фото." :
+                              "AI-сервер не подключён. Пока нет Core ML, нейросетевое распознавание недоступно.",
+                              systemImage: "info.circle")
+                            .font(.footnote).foregroundStyle(.secondary)
                     } else if realServerAvailable {
                         Label("Подключён YOLO AI-сервер: анализ реальной моделью, результат предварительный.",
                               systemImage: "checkmark.shield")
                             .font(.footnote).foregroundStyle(.green)
                     } else {
-                        Label("DEMO-режим сервера: цветовая эвристика, НЕ нейросеть. Она не может подтвердить пожар.",
+                        Label("Сервер работает в DEMO-режиме цветовой эвристики — это не нейросеть.",
                               systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
                     }
@@ -58,7 +83,7 @@ struct DetectionView: View {
                             .frame(maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 16))
                         Section {
                             if OnDeviceFireDetector.isInstalled {
-                                Button(localAnalyzing ? "Проверяем на iPhone…" : "Проверить локально через Core ML") {
+                                Button(localAnalyzing ? "Проверяем на iPhone…" : "AI-анализ фото на iPhone · Core ML") {
                                     localAnalyzing = true
                                     localResult = nil
                                     Task {
@@ -74,7 +99,7 @@ struct DetectionView: View {
                                 .buttonStyle(.borderedProminent)
                                 .disabled(localAnalyzing)
                             } else {
-                                Label("Локальная модель Core ML ещё не установлена. Можно добавить экспортированную модель или подключить AI-сервер.",
+                                Label("Core ML отсутствует в этой сборке. Запустите указанную выше команду на Mac и пересоберите приложение.",
                                       systemImage: "cpu")
                                     .font(.footnote).foregroundStyle(.secondary)
                             }

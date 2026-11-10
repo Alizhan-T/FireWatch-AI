@@ -13,6 +13,27 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertFalse(HLSManifestProbe.looksLikePlaylist(Data()))
     }
 
+    func testCoreMLClassMappingUsesActualCheckpointOrder() {
+        let reverse = ["0": "smoke", "1": "fire"]
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("0", labelsByID: reverse), "smoke")
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("1", labelsByID: reverse), "fire")
+        XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("fire", labelsByID: [:]), "fire")
+        XCTAssertNil(OnDeviceFireDetector.resolvedLabel("0", labelsByID: [:]))
+        XCTAssertNil(OnDeviceFireDetector.resolvedLabel("2", labelsByID: reverse))
+    }
+
+    func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {
+        let cameras = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
+        XCTAssertGreaterThanOrEqual(cameras.count, 2)
+        XCTAssertTrue(cameras.contains { $0.id == "astana-khan-shatyr-publisher" })
+        XCTAssertTrue(cameras.contains { $0.youtubeVideoID != nil })
+        for camera in cameras {
+            XCTAssertEqual(camera.pageURL.scheme, "https")
+            XCTAssertFalse(camera.pageURL.pathExtension.lowercased() == "m3u8")
+            XCTAssertFalse(camera.reliabilityNote.isEmpty)
+        }
+    }
+
     func testBundledCamerasAreKazakhstanOnlyHTTPSHLS() {
         let candidates = PublicCameraCatalog.candidates
         XCTAssertGreaterThanOrEqual(candidates.count, 7)

@@ -1,5 +1,19 @@
 # FireWatch Native — SwiftUI-only iOS client
 
+## Troubleshooting on iPhone — fire overlays, Astana feeds, and AI (11 Nov 2026)
+
+- **Fire placement:** the DEMO VFX now attaches only to the 250pt camera surface, never to the connection caption underneath. The 16:9 visible video letterbox is used for an approximate mask. Fire location and scale can be adjusted with the three controls directly below the player. The effect remains synthetic and is not an AI detection.
+- **Astana:** no independently verified, permitted direct HLS stream was found. The existing Atameken YouTube broadcast can reject WKWebView embedding or end. A button now opens its original publisher URL in an in-app SFSafariViewController instead of leaving only a blank embed; a second Astana Khan Shatyr publisher page is listed as an *unverified* alternative. Neither is an automatically AI-analyzable video or guaranteed 24/7 live.
+- **Actual on-device AI (requires setup):** the iOS source contains a Vision/Core ML image-analysis path, but the repository carries only the original PyTorch checkpoint, not a compiled iPhone model. Without a Mac export or a connected backend, the AI tab cannot run real inference. One-command Mac setup from the repository root:
+
+  `bash FireWatchNative/tools/enable_ai_on_iphone.sh`
+
+  This creates a dedicated Python environment, installs the conversion dependencies, exports the existing YOLO fire/smoke checkpoint to Core ML, validates that the package exists, and regenerates the Xcode project. Reopen the project, choose **Product → Clean Build Folder**, run on the iPhone, and in the **AI** tab choose a photo → **AI-анализ фото на iPhone · Core ML**. The export downloads dependencies and needs disk space. If the exporter reports an incompatible model or Core ML toolchain, it will stop instead of faking an AI result.
+- **AI limitations:** this is user-selected **photo** inference. It does not automatically examine YouTube videos, draw conclusions from DEMO fire overlays or scan third-party city feeds. Such scanning requires a permitted source and an explicitly configured, tested pipeline.
+
+---
+
+
 ## November 2026 — lightweight native stability pass
 
 The iPhone application now launches as pure SwiftUI without the Firebase / APNs SDK. This removes optional remote-notification dependencies that added binary size and build time even though a free Apple Personal Team cannot enable the necessary Push Notifications entitlement. **Remote push and Firebase device registration are not part of this build**; camera viewing, local event reports and DEMO simulations still work.

@@ -23,3 +23,8 @@ node_modules/
 index.js
 package.json
 .DS_Store
+
+# Generated local Core ML model and virtual environment
+.venv-coreml/
+FireWatchNative/FireWatchNative/Models/*.mlpackage/
+backend/models/*.mlpackage/

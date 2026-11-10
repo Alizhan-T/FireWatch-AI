@@ -167,7 +167,7 @@ struct CameraLibraryView: View {
     }
 }
 
-private struct PublicCameraDetailView: View {
+struct PublicCameraDetailView: View {
     let candidate: CameraCandidate
 
     var body: some View {

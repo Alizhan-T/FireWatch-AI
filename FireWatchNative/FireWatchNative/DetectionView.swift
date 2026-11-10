@@ -112,7 +112,7 @@ struct DetectionView: View {
                                         saveIncident: saveIncident,
                                         latitude: lat,
                                         longitude: lon,
-                                        locationName: saveIncident ? "(city.name) (координаты центра города)" : nil
+                                        locationName: saveIncident ? "\(city.name) (координаты центра города)" : nil
                                     )
                                     error = nil
                                 } catch {

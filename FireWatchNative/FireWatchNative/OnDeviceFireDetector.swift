@@ -1,6 +1,7 @@
 import CoreML
 import Vision
 import UIKit
+import ImageIO
 
 struct OnDeviceFireResult {
     let fireDetected: Bool
@@ -32,7 +33,7 @@ enum OnDeviceFireError: LocalizedError {
         case .unsupportedOutputs:
             return "Core ML вернул неподдерживаемый тип данных. Требуется YOLO-экспорт с nms=True, совместимый с Vision."
         case .unsupportedLabels:
-            return "Модель возвращает незнакомые классы. Ожидались fire и smoke; нельзя достоверно показать результат."
+            return "Модель должна возвращать названия классов fire и smoke. Номера 0/1 без явного сопоставления нельзя интерпретировать: можно перепутать огонь и дым."
         }
     }
 }
@@ -53,6 +54,7 @@ enum OnDeviceFireDetector {
         guard let cgImage = image.cgImage else {
             throw OnDeviceFireError.invalidImage
         }
+        let orientation = cgOrientation(for: image.imageOrientation)
         return try await Task.detached(priority: .userInitiated) {
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
@@ -60,7 +62,7 @@ enum OnDeviceFireDetector {
             let visionModel = try VNCoreMLModel(for: model)
             let request = VNCoreMLRequest(model: visionModel)
             request.imageCropAndScaleOption = .scaleFit
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
             try handler.perform([request])
 
             let results = request.results ?? []
@@ -75,9 +77,10 @@ enum OnDeviceFireDetector {
 
             for observation in observations {
                 guard let label = observation.labels.first else { continue }
-                let key = label.identifier.lowercased()
-                let fireLabel = key == "fire" || key == "0"
-                let smokeLabel = key == "smoke" || key == "1"
+                let key = label.identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                // D-Fire exports may order numeric labels differently. Never guess.
+                let fireLabel = key == "fire"
+                let smokeLabel = key == "smoke"
                 guard fireLabel || smokeLabel else { throw OnDeviceFireError.unsupportedLabels }
                 guard label.confidence >= 0.65 else { continue }
                 accepted += 1
@@ -94,5 +97,21 @@ enum OnDeviceFireDetector {
                 modelName: modelName
             )
         }.value
+    }
+
+    /// UIImage and Vision use different orientation enumerations.
+    /// Preserve the photo's actual orientation before asking the model.
+    private static func cgOrientation(for orientation: UIImage.Orientation) -> CGImagePropertyOrientation {
+        switch orientation {
+        case .up: return .up
+        case .down: return .down
+        case .left: return .left
+        case .right: return .right
+        case .upMirrored: return .upMirrored
+        case .downMirrored: return .downMirrored
+        case .leftMirrored: return .leftMirrored
+        case .rightMirrored: return .rightMirrored
+        @unknown default: return .up
+        }
     }
 }

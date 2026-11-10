@@ -39,6 +39,20 @@ The exporter validates that the expected classes are fire and smoke and selects 
 ---
 
 
+## Kazakhstan city cameras and training SOS (November 2026)
+
+The camera picker now includes **Astana, Almaty, Semey and Aktau**:
+- Aktau: seven public direct HTTPS HLS streams.
+- Almaty: two *newly probed* Shymbulak HTTPS HLS streams and publisher alternatives. A GitHub Actions manifest test on 10 November 2026 received valid HLS playlists from **9/9** catalogue links (seven Aktau + two Almaty), but this is **not** proof that video segments render on a physical iPhone, that streams remain available, or that the operators permit automatic analysis.
+- Astana: a published Atameken Business city livestream shown inside the app using a YouTube embed; the owner may block embedding or terminate the live session.
+- Semey: the Central Square Geocam/gorset.kz publisher page is still marked *unstable* and may not play on an iPhone. There is no verified direct HLS for Semey yet.
+
+**DEMO simulation**: Choose «Имитировать пожар», select a city, and tap «Запустить DEMO». FireWatch opens a camera-backed training screen (defaults to a camera from the selected city if available; falls back to an available catalogue option), with an animated **artificial flame/smoke overlay** and persistent, unmissable «DEMO / НЕ РЕАЛЬНЫЙ ПОЖАР» label. The original stream is not changed or recorded. The actual camera city is shown separately from the simulated incident city to avoid confusion.
+
+Starting a DEMO requests iPhone notification permission when required and schedules a **local** «SOS · ДЕМО · УЧЕБНАЯ ТРЕВОГА» notification. Foreground banners are supported and there is a button to re-send the test. This is entirely on-device: no APNs/Firebase service, backend, emergency-number call, dispatch, broadcast or third-party message occurs. Denied permissions are reported inside the app. Manually entered non-DEMO events cannot produce this test SOS payload.
+
+Physical-device verification is still required for stream decoding, permissions and notifications. Real autonomous fire/smoke detection is **not implemented by this feature** and requires a separately evaluated Core ML model or the existing optional server. Public viewing alone does not authorize AI analysis of third-party feeds.
+
 ## First launch: server-free camera viewing
 
 This native SwiftUI application (iOS 17+) is the sole supported iPhone client. **A FireWatch backend is optional.** Generate the Xcode project with XcodeGen, open the app, and go to **Камеры** to watch the built-in public HLS camera candidates directly through AVPlayer. You may add personal HTTP(S) .m3u8 streams under **Мои HLS-камеры · без сервера**; they persist in UserDefaults on the iPhone. The map displays published camera coordinates even when no backend is configured.

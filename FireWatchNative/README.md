@@ -1,4 +1,14 @@
-# FireWatch Native — SwiftUI iOS client
+# FireWatch Native — SwiftUI-only iOS client
+
+## First launch: server-free camera viewing
+
+This native SwiftUI application (iOS 17+) is the sole supported iPhone client. **A FireWatch backend is optional.** Generate the Xcode project with XcodeGen, open the app, and go to **Камеры** to watch the built-in public HLS camera candidates directly through AVPlayer. You may add personal HTTP(S) .m3u8 streams under **Мои HLS-камеры · без сервера**; they persist in UserDefaults on the iPhone. The map displays published camera coordinates even when no backend is configured.
+
+Public streams may be offline and their operators may prohibit automated processing. The app indicates AVPlayer preparation/failure, not guaranteed uptime. No realtime AI fire detection, incident database or Firebase push is provided in server-free mode.
+
+To opt into the existing remote AI features later, configure the optional backend using the instructions below. A future truly server-free detector will require a separately converted and validated Core ML model.
+
+---
 
 Native iPhone client for the FireWatch-AI FastAPI + YOLO backend. The native client does not use Flutter.
 
@@ -93,7 +103,8 @@ The iOS FCM token is registered with the backend after permission is granted. A 
 ## Current implementation status
 
 Implemented in this branch:
-- Native SwiftUI dashboard, five-tab navigation, MapKit markers.
+- Native SwiftUI dashboard, five-tab navigation, MapKit markers and offline public camera locations.
+- Server-free personal HLS camera bookmarks (iPhone UserDefaults) and direct AVPlayer playback with per-open stream status.
 - Typed API client with detailed HTTP errors, server health checks and secure Keychain API-key storage.
 - Camera registration/deletion, FFmpeg stream check, HLS playback and manual single-frame AI analysis.
 - Direct viewing of the bundled public HLS candidates without a backend; AI analysis and continuous monitoring still require the FastAPI backend.

@@ -93,6 +93,7 @@ final class HLSPlaybackController: ObservableObject {
     private var stalledObserver: NSObjectProtocol?
     private var watchdog: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var progressMonitor: Task<Void, Never>?
 
     func start(_ url: URL) {
         guard self.url != url || player == nil else { return }
@@ -117,6 +118,8 @@ final class HLSPlaybackController: ObservableObject {
     }
 
     private func clearPlayback() {
+        progressMonitor?.cancel()
+        progressMonitor = nil
         watchdog?.cancel()
         watchdog = nil
         reconnectTask?.cancel()
@@ -167,6 +170,7 @@ final class HLSPlaybackController: ObservableObject {
                     self.attempts = 0
                     self.watchdog?.cancel()
                     self.watchdog = nil
+                    self.monitorPlaybackProgress(token)
                 case .waitingToPlayAtSpecifiedRate:
                     if self.phase == .playing {
                         self.phase = .buffering
@@ -202,6 +206,35 @@ final class HLSPlaybackController: ObservableObject {
             } catch { return }
             guard let self, self.session == token, self.phase != .playing else { return }
             self.recover(reason: "Камера не передаёт видео в течение 20 секунд", token: token)
+        }
+    }
+
+    /// A player may claim .playing but stop advancing, e.g. after a
+    /// disconnected HLS segment. Check progress without continuously polling
+    /// an upstream camera or launching an unbounded reconnect loop.
+    private func monitorPlaybackProgress(_ token: UUID) {
+        progressMonitor?.cancel()
+        progressMonitor = Task { [weak self] in
+            var previousTime: Double?
+            var stalledChecks = 0
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch { return }
+                guard let self, self.session == token, self.phase == .playing else { return }
+                guard let currentTime = self.player?.currentTime().seconds,
+                      currentTime.isFinite else { continue }
+                if let previousTime, currentTime <= previousTime + 0.15 {
+                    stalledChecks += 1
+                } else {
+                    stalledChecks = 0
+                }
+                previousTime = currentTime
+                if stalledChecks >= 3 {
+                    self.recover(reason: "Видео перестало обновляться", token: token)
+                    return
+                }
+            }
         }
     }
 

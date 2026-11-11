@@ -134,13 +134,7 @@ struct DemoTrainingStage: View {
             .frame(maxWidth: .infinity)
             .frame(height: 250)
             .overlay {
-                GeometryReader { geometry in
-                    RealisticFireOverlay()
-                        .scaleEffect(0.65)
-                        .position(x: geometry.size.width * 0.6,
-                                  y: geometry.size.height - 15 - 117 * 0.65)
-                        .allowsHitTesting(false)
-                }
+                RealisticFireOverlay(verticalPosition: 0.94)
             }
             .overlay {
                 DemoScannerOverlay()

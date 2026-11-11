@@ -97,6 +97,8 @@ final class HLSPlaybackController: ObservableObject {
     @Published private(set) var phase: HLSPlaybackPhase = .idle
     @Published private(set) var message = "Готово к подключению"
 
+    @Published private(set) var videoSize: CGSize = .zero
+    private var sizeObservation: NSKeyValueObservation?
     private var url: URL?
     private var session = UUID()
     private var attempts = 0
@@ -136,6 +138,9 @@ final class HLSPlaybackController: ObservableObject {
         watchdog = nil
         reconnectTask?.cancel()
         reconnectTask = nil
+        sizeObservation?.invalidate()
+        sizeObservation = nil
+        videoSize = .zero
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
         playerStatusObservation?.invalidate()
@@ -162,6 +167,13 @@ final class HLSPlaybackController: ObservableObject {
         streamPlayer.automaticallyWaitsToMinimizeStalling = true
         player = streamPlayer
 
+        sizeObservation = item.observe(\.presentationSize, options: [.initial, .new]) { [weak self] item, _ in
+            let size = item.presentationSize
+            Task { @MainActor [weak self] in
+                guard let self, self.session == token else { return }
+                self.videoSize = size
+            }
+        }
         itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             let status = item.status
             Task { @MainActor [weak self] in
@@ -283,6 +295,11 @@ final class HLSPlaybackController: ObservableObject {
     }
 }
 
+struct HLSVideoSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
 /// AVPlayer opens HLS directly without any FireWatch API or proxy.
 struct DirectHLSPlayer: View {
     let url: URL
@@ -344,6 +361,7 @@ struct DirectHLSPlayer: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .preference(key: HLSVideoSizeKey.self, value: playback.videoSize)
         .onChange(of: url, initial: true) { _, url in
             if scenePhase == .active { playback.start(url) }
         }

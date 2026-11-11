@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 private struct TrainingCameraOption: Identifiable {
     let id: String
@@ -21,7 +22,7 @@ struct DemoFireScenarioView: View {
     @State private var showScanline = true
     @State private var useSyntheticStage = true
     @State private var fireHorizontalPosition = 0.58
-    @State private var fireScale = 0.65
+    @State private var fireScale = 0.82
     @State private var fireVerticalPosition = 0.88
     @State private var showSourceBrowser = false
     @State private var publisherLoading = true
@@ -162,41 +163,25 @@ struct DemoFireScenarioView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 250)
-                            .overlay {
-                                if showFireEffect && canRenderTrainingEffects {
+                            .overlayPreferenceValue(HLSVideoSizeKey.self) { hlsSize in
+                                if canRenderTrainingEffects {
                                     GeometryReader { geometry in
-                                        // AVPlayer letterboxes landscape feeds. Keep
-                                        // fire on visible video, not the black bars.
-                                        let videoHeight = min(geometry.size.height,
-                                                              geometry.size.width * 9 / 16)
-                                        let topInset = (geometry.size.height - videoHeight) / 2
-                                        let baseline = topInset + videoHeight * CGFloat(fireVerticalPosition)
-                                        RealisticFireOverlay()
-                                            .scaleEffect(CGFloat(fireScale))
-                                            .position(
-                                                x: geometry.size.width * CGFloat(fireHorizontalPosition),
-                                                y: baseline - 117 * CGFloat(fireScale)
-                                            )
-                                            .mask {
-                                                Rectangle()
-                                                    .frame(width: geometry.size.width, height: videoHeight)
-                                                    .position(x: geometry.size.width / 2,
-                                                              y: geometry.size.height / 2)
+                                        let bounds = CGRect(origin: .zero, size: geometry.size)
+                                        let picture = camera.streamURL == nil ? CGSize(width: 16, height: 9) : hlsSize
+                                        if trainingStage || (picture.width > 0 && picture.height > 0) {
+                                            let rect = trainingStage ? bounds : AVMakeRect(aspectRatio: picture, insideRect: bounds)
+                                            ZStack {
+                                                if showFireEffect {
+                                                    RealisticFireOverlay(horizontalPosition: fireHorizontalPosition,
+                                                                         verticalPosition: fireVerticalPosition,
+                                                                         scale: fireScale)
+                                                }
+                                                if showScanline { DemoScannerOverlay() }
                                             }
-                                    }
-                                    .allowsHitTesting(false)
-                                }
-                            }
-                            .overlay {
-                                if showScanline && canRenderTrainingEffects {
-                                    GeometryReader { geometry in
-                                        let videoHeight = trainingStage
-                                            ? geometry.size.height
-                                            : min(geometry.size.height, geometry.size.width * 9 / 16)
-                                        DemoScannerOverlay()
-                                            .frame(width: geometry.size.width, height: videoHeight)
-                                            .position(x: geometry.size.width / 2,
-                                                      y: geometry.size.height / 2)
+                                            .frame(width: rect.width, height: rect.height)
+                                            .clipped()
+                                            .position(x: rect.midX, y: rect.midY)
+                                        }
                                     }
                                     .allowsHitTesting(false)
                                 }
@@ -280,7 +265,7 @@ struct DemoFireScenarioView: View {
                                 .tint(.orange)
                             Text("Размер эффекта")
                                 .font(.caption.bold())
-                            Slider(value: $fireScale, in: 0.42...0.92)
+                            Slider(value: $fireScale, in: 0.46...1.08)
                                 .tint(.orange)
                             Text("Подберите положение по объектам камеры. Эффект не определяет реальное место возгорания.")
                                 .font(.caption2)

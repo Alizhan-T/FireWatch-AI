@@ -207,15 +207,9 @@ struct PublisherCameraDetailView: View {
                                     .allowsHitTesting(false)
                             }
                             if showVideoFireDemo {
-                                GeometryReader { geometry in
-                                    let videoHeight = min(geometry.size.height,
-                                                          geometry.size.width * 9 / 16)
-                                    RealisticFireOverlay()
-                                        .scaleEffect(0.58)
-                                        .position(x: geometry.size.width * 0.65,
-                                                  y: geometry.size.height / 2 + videoHeight * 0.42 - 117 * 0.58)
-                                        .allowsHitTesting(false)
-                                }
+                                RealisticFireOverlay(horizontalPosition: 0.65, scale: 0.76)
+                                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
                         .overlay(alignment: .topLeading) {

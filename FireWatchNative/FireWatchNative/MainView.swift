@@ -10,6 +10,8 @@ struct MainView: View {
     @StateObject private var api = API()
     @StateObject private var localEvents = LocalEventStore()
     @State private var showSettings = false
+    @State private var serverAddress = ""
+    @State private var serverKey = ""
     @State private var monitoringBusy = false
     @State private var selectedTab = 0
     @State private var selectedPublicCamera: CameraCandidate?
@@ -47,7 +49,7 @@ struct MainView: View {
             .tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
         .tint(Palette.accent)
-        .task(id: scenePhase) {
+        .task(id: scenePhase == .active ? api.configurationRevision : nil) {
             // No launch-time network requests or recurring timer in iPhone-only mode.
             guard scenePhase == .active,
                   !api.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -69,7 +71,11 @@ struct MainView: View {
             events: localEvents,
             onOpenCameras: { selectedTab = 3 },
             onOpenEvents: { selectedTab = 2 },
-            onOpenSettings: { showSettings = true }
+            onOpenSettings: {
+                serverAddress = api.baseURL
+                serverKey = api.apiKey
+                showSettings = true
+            }
         )
         .sheet(isPresented: $showSettings) { settings }
     }
@@ -189,17 +195,16 @@ struct MainView: View {
         NavigationStack {
             Form {
                 Section("Подключение к FastAPI") {
-                    TextField("http://192.168.1.20:8000", text: $api.baseURL)
+                    TextField("http://192.168.1.20:8000", text: $serverAddress)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
-                    SecureField("API key (если включён на сервере)", text: $api.apiKey)
+                    SecureField("API key (если включён на сервере)", text: $serverKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     Button("Сохранить и проверить") {
                         do {
-                            try api.saveURL()
-                            Task { await api.refresh() }
+                            try api.saveURL(serverAddress, key: serverKey)
                             showSettings = false
                         } catch {
                             api.error = error.localizedDescription

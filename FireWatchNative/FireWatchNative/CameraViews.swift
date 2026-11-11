@@ -206,9 +206,7 @@ struct CameraLibraryView: View {
                 AddCameraView(api: api)
             }
             .task(id: cityFilter) {
-                if !filteredDirectCameras.isEmpty {
-                    await availability.refresh(filteredDirectCameras)
-                }
+                await availability.refresh(filteredDirectCameras)
             }
             .refreshable {
                 await availability.refresh(filteredDirectCameras)

@@ -13,6 +13,48 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertFalse(HLSManifestProbe.looksLikePlaylist(Data()))
     }
 
+    @MainActor
+    func testNewCityRefreshWinsOverAnOlderProbe() async throws {
+        let camera = try XCTUnwrap(PublicCameraCatalog.candidates.first)
+        let availability = KazakhstanCameraAvailability()
+        let started = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        let oldRefresh = Task {
+            await availability.refresh([camera]) { _ in
+                started.continuation.finish()
+                for await _ in release.stream {}
+                return .unavailable
+            }
+        }
+        for await _ in started.stream {}
+        XCTAssertEqual(availability.status(for: camera.id), .checking)
+        await availability.refresh([camera]) { _ in .playlistAvailable }
+        release.continuation.finish()
+        await oldRefresh.value
+        XCTAssertFalse(availability.checking)
+        XCTAssertEqual(availability.status(for: camera.id), .playlistAvailable)
+    }
+
+    @MainActor
+    func testCancelledProbeRestoresPreviousStatus() async throws {
+        let camera = try XCTUnwrap(PublicCameraCatalog.candidates.first)
+        let availability = KazakhstanCameraAvailability()
+        await availability.refresh([camera]) { _ in .playlistAvailable }
+        let started = AsyncStream<Void>.makeStream()
+        let refresh = Task {
+            await availability.refresh([camera]) { _ in
+                started.continuation.finish()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                return .unavailable
+            }
+        }
+        for await _ in started.stream {}
+        refresh.cancel()
+        await refresh.value
+        XCTAssertFalse(availability.checking)
+        XCTAssertEqual(availability.status(for: camera.id), .playlistAvailable)
+    }
+
     func testCoreMLClassMappingUsesActualCheckpointOrder() {
         let reverse = ["0": "smoke", "1": "fire"]
         XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("0", labelsByID: reverse), "smoke")

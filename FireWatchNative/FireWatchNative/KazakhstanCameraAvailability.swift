@@ -45,38 +45,48 @@ enum HLSManifestProbe {
 @MainActor
 final class KazakhstanCameraAvailability: ObservableObject {
     @Published private(set) var statuses: [String: KazakhstanCameraReachability] = [:]
-    @Published private(set) var checking = false
+    @Published private var pending: Set<String> = []
+    private var revision = 0
+    var checking: Bool { !pending.isEmpty }
     @Published private(set) var lastCheckedAt: Date?
 
     func status(for id: String) -> KazakhstanCameraReachability {
-        statuses[id] ?? .unchecked
+        pending.contains(id) ? .checking : (statuses[id] ?? .unchecked)
     }
 
-    func refresh(_ candidates: [CameraCandidate]) async {
-        guard !checking else { return }
-        checking = true
-        defer {
-            checking = false
-            lastCheckedAt = Date()
+    func refresh(
+        _ candidates: [CameraCandidate],
+        probe: @escaping @Sendable (String) async -> KazakhstanCameraReachability = {
+            await HLSManifestProbe.check(url: $0)
         }
-        for camera in candidates {
-            statuses[camera.id] = .checking
+    ) async {
+        guard !Task.isCancelled else { return }
+        revision += 1
+        let currentRevision = revision
+        pending = Set(candidates.map(\.id))
+        defer {
+            if revision == currentRevision { pending.removeAll() }
         }
 
         // Limit to 3 requests in parallel; do not hammer third-party operators.
         for offset in stride(from: 0, to: candidates.count, by: 3) {
-            if Task.isCancelled { return }
+            if Task.isCancelled || revision != currentRevision { return }
             let batch = Array(candidates[offset..<min(offset + 3, candidates.count)])
             await withTaskGroup(of: (String, KazakhstanCameraReachability).self) { group in
                 for camera in batch {
                     group.addTask {
-                        (camera.id, await HLSManifestProbe.check(url: camera.url))
+                        (camera.id, await probe(camera.url))
                     }
                 }
                 for await (id, status) in group {
-                    if !Task.isCancelled { statuses[id] = status }
+                    guard !Task.isCancelled, revision == currentRevision else { continue }
+                    statuses[id] = status
+                    pending.remove(id)
                 }
             }
+        }
+        if !Task.isCancelled && revision == currentRevision && !candidates.isEmpty {
+            lastCheckedAt = Date()
         }
     }
 }

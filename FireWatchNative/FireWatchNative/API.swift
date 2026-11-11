@@ -29,8 +29,8 @@ enum FireWatchAPIError: LocalizedError {
 
 @MainActor
 final class API: ObservableObject {
-    @Published var baseURL = UserDefaults.standard.string(forKey: "firewatch.server") ?? ""
-    @Published var apiKey = KeychainStore.load("apiKey") ?? ""
+    @Published private(set) var baseURL = UserDefaults.standard.string(forKey: "firewatch.server") ?? ""
+    @Published private(set) var apiKey = KeychainStore.load("apiKey") ?? ""
     @Published private(set) var incidents: [Incident] = []
     @Published private(set) var cameras: [Camera] = []
     @Published private(set) var stats: Stats?
@@ -39,10 +39,10 @@ final class API: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var lastSuccessfulSync: Date?
     @Published var error: String?
-    private var configurationRevision = 0
+    @Published private(set) var configurationRevision = 0
 
-    func saveURL() throws {
-        let cleaned = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    func saveURL(_ address: String, key: String) throws {
+        let cleaned = address.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !cleaned.isEmpty else { throw FireWatchAPIError.serverNotConfigured }
         guard let url = URL(string: cleaned), let scheme = url.scheme?.lowercased(),
@@ -50,6 +50,7 @@ final class API: ObservableObject {
             throw FireWatchAPIError.invalidServerURL
         }
         configurationRevision += 1
+        loading = false
         isConnected = false
         // Never show incidents/camera data from the previous server while switching.
         incidents = []
@@ -60,12 +61,14 @@ final class API: ObservableObject {
         error = nil
         baseURL = cleaned
         UserDefaults.standard.set(cleaned, forKey: "firewatch.server")
-        KeychainStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey")
+        apiKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        KeychainStore.save(apiKey, for: "apiKey")
     }
 
     /// Explicitly enable the standalone iPhone mode without deleting saved HLS links.
     func useWithoutServer() {
         configurationRevision += 1
+        loading = false
         baseURL = ""
         UserDefaults.standard.removeObject(forKey: "firewatch.server")
         incidents = []
@@ -90,9 +93,11 @@ final class API: ObservableObject {
               ["http", "https"].contains(scheme), let host = url.host else {
             throw FireWatchAPIError.invalidServerURL
         }
-        if ["localhost", "127.0.0.1", "::1"].contains(host.lowercased()) {
+#if !targetEnvironment(simulator)
+        if ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()) {
             throw FireWatchAPIError.useMacAddress
         }
+#endif
         return url
     }
 
@@ -145,6 +150,7 @@ final class API: ObservableObject {
         timeout: TimeInterval = 15,
         as type: T.Type = T.self
     ) async throws -> T {
+        let revision = configurationRevision
         var request = URLRequest(url: try endpoint(path))
         request.httpMethod = method
         request.timeoutInterval = timeout
@@ -155,6 +161,7 @@ final class API: ObservableObject {
         if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        guard revision == configurationRevision else { throw CancellationError() }
         guard let http = response as? HTTPURLResponse else {
             throw FireWatchAPIError.invalidResponse
         }
@@ -199,8 +206,8 @@ final class API: ObservableObject {
         }
         guard !loading else { return }
         loading = true
-        defer { loading = false }
         let revision = configurationRevision
+        defer { if revision == configurationRevision { loading = false } }
         let endpointURL = baseURL
         do {
             async let h: ServerHealth = request("/health")

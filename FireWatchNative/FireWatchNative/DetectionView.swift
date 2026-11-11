@@ -69,13 +69,20 @@ struct DetectionView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .onChange(of: selected) { _, item in
-                        Task {
-                            if let data = try? await item?.loadTransferable(type: Data.self) {
-                                image = UIImage(data: data)
-                                result = nil; error = nil
-                                localResult = nil; localError = nil
-                            }
+                    .disabled(analyzing || localAnalyzing)
+                    .task(id: selected) {
+                        image = nil
+                        result = nil
+                        error = nil
+                        localResult = nil
+                        localError = nil
+                        guard let item = selected else { return }
+                        let data = try? await item.loadTransferable(type: Data.self)
+                        guard !Task.isCancelled, selected == item else { return }
+                        if let data, let photo = UIImage(data: data) {
+                            image = photo
+                        } else {
+                            error = "Не удалось загрузить фотографию. Выберите её ещё раз."
                         }
                     }
                     if let image {
@@ -148,12 +155,13 @@ struct DetectionView: View {
                             let shouldSave = saveIncident && realServerAvailable
                             let lat: Double? = shouldSave ? city.lat : nil
                             let lon: Double? = shouldSave ? city.lon : nil
+                            analyzing = true
                             Task {
+                                defer { analyzing = false }
                                 guard let jpeg = image.jpegData(compressionQuality: 0.8) else {
                                     error = "Не удалось подготовить фотографию."
                                     return
                                 }
-                                analyzing = true
                                 result = nil
                                 error = nil
                                 do {
@@ -168,7 +176,6 @@ struct DetectionView: View {
                                 } catch {
                                     self.error = error.localizedDescription
                                 }
-                                analyzing = false
                             }
                         }
                         .buttonStyle(.borderedProminent)

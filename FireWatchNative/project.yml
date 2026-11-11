@@ -21,6 +21,13 @@ targets:
         basedOnDependencyAnalysis: false
     info:
       path: Info.plist
+      properties:
+        CFBundleDisplayName: FireWatch AI
+        CFBundleShortVersionString: "1.0.0"
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Подключение к серверу FireWatch AI в локальной сети
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     # No Push Notifications entitlement by default: free Personal Teams can sign
     # and run the camera viewer on an actual iPhone.
     # APNs/FCM requires a paid Apple Developer team and explicit opt-in setup.

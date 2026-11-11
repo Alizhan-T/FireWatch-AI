@@ -43,8 +43,8 @@ struct DemoFireScenarioView: View {
             return TrainingCameraOption(
                 id: "public.\(candidate.id)",
                 title: candidate.name,
-                city: candidate.id.hasPrefix("almaty-") ? "Алматы" : "Актау",
-                cityID: candidate.id.hasPrefix("almaty-") ? "almaty" : "aktau",
+                city: KazakhstanCities.name(for: candidate.catalogCityID),
+                cityID: candidate.catalogCityID,
                 streamURL: url,
                 youtubeID: nil,
                 publisherPageURL: nil

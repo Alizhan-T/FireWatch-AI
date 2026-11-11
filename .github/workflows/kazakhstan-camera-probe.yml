@@ -16,7 +16,7 @@ jobs:
           python3 - <<'PY'
           import concurrent.futures, pathlib, re, urllib.error, urllib.request
           source = pathlib.Path('FireWatchNative/FireWatchNative/PublicCameraCatalog.swift').read_text()
-          urls = sorted(set(re.findall(r'url: "(https://[^" ]+\.m3u8)"', source)))
+          urls = sorted(set(re.findall(r'\burl: "(https://[^" ]+\.m3u8(?:\?[^" ]*)?)"', source)))
           if not urls:
               raise SystemExit('No HTTPS HLS links in bundled Kazakhstan catalogue')
 

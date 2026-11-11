@@ -86,6 +86,7 @@ enum HLSPlaybackPhase {
     case connecting
     case buffering
     case playing
+    case paused
     case reconnecting
     case failed
 }
@@ -178,17 +179,23 @@ final class HLSPlaybackController: ObservableObject {
                 case .playing:
                     self.phase = .playing
                     self.message = "Видео воспроизводится"
-                    self.attempts = 0
                     self.watchdog?.cancel()
                     self.watchdog = nil
                     self.monitorPlaybackProgress(token)
                 case .waitingToPlayAtSpecifiedRate:
-                    if self.phase == .playing {
+                    if self.phase == .playing || self.phase == .paused {
                         self.phase = .buffering
                         self.message = "Связь прервалась — ожидаем возобновления…"
                         self.startWatchdog(token)
                     }
-                default:
+                case .paused:
+                    if self.phase == .connecting || self.phase == .playing || self.phase == .buffering {
+                        self.phase = .paused
+                        self.message = "Воспроизведение приостановлено"
+                        self.watchdog?.cancel()
+                        self.progressMonitor?.cancel()
+                    }
+                @unknown default:
                     break
                 }
             }
@@ -199,7 +206,7 @@ final class HLSPlaybackController: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.session == token else { return }
+                guard let self, self.session == token, self.phase != .paused else { return }
                 self.phase = .buffering
                 self.message = "Поток завис — пробуем восстановить воспроизведение…"
                 self.startWatchdog(token)
@@ -233,14 +240,16 @@ final class HLSPlaybackController: ObservableObject {
                     try await Task.sleep(nanoseconds: 5_000_000_000)
                 } catch { return }
                 guard let self, self.session == token, self.phase == .playing else { return }
-                guard let currentTime = self.player?.currentTime().seconds,
-                      currentTime.isFinite else { continue }
-                if let previousTime, currentTime <= previousTime + 0.15 {
-                    stalledChecks += 1
+                if let currentTime = self.player?.currentTime().seconds, currentTime.isFinite {
+                    if let previousTime, currentTime <= previousTime + 0.15 {
+                        stalledChecks += 1
+                    } else {
+                        stalledChecks = 0
+                    }
+                    previousTime = currentTime
                 } else {
-                    stalledChecks = 0
+                    stalledChecks += 1
                 }
-                previousTime = currentTime
                 if stalledChecks >= 3 {
                     self.recover(reason: "Видео перестало обновляться", token: token)
                     return
@@ -251,8 +260,11 @@ final class HLSPlaybackController: ObservableObject {
 
     private func recover(reason: String, token: UUID) {
         guard session == token, phase != .reconnecting, phase != .failed else { return }
+        // Retire this player immediately so queued KVO callbacks cannot undo a retry.
+        session = UUID()
+        let retrySession = session
+        clearPlayback()
         guard attempts < 2 else {
-            clearPlayback()
             phase = .failed
             message = "\(reason). Проверьте интернет или ссылку на поток."
             return
@@ -261,14 +273,11 @@ final class HLSPlaybackController: ObservableObject {
         let currentAttempt = attempts
         phase = .reconnecting
         message = "Восстанавливаем поток (\(currentAttempt)/2)…"
-        watchdog?.cancel()
-        watchdog = nil
-        reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(currentAttempt * 2) * 1_000_000_000)
             } catch { return }
-            guard let self, self.session == token, self.phase == .reconnecting else { return }
+            guard let self, self.session == retrySession, self.phase == .reconnecting else { return }
             self.connect()
         }
     }
@@ -335,7 +344,7 @@ struct DirectHLSPlayer: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .onAppear {
+        .onChange(of: url, initial: true) { _, url in
             if scenePhase == .active { playback.start(url) }
         }
         .onChange(of: scenePhase) { _, phase in

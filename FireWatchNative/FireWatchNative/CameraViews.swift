@@ -11,12 +11,7 @@ struct CameraLibraryView: View {
     @State private var cityFilter = "all"
 
     private var filteredDirectCameras: [CameraCandidate] {
-        switch cityFilter {
-        case "all": PublicCameraCatalog.candidates
-        case "almaty": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("almaty-") }
-        case "aktau": PublicCameraCatalog.candidates.filter { $0.id.hasPrefix("aktau-") }
-        default: []
-        }
+        PublicCameraCatalog.candidates.filter { cityFilter == "all" || $0.catalogCityID == cityFilter }
     }
 
     private var filteredPublisherCameras: [PublishedWebCamera] {
@@ -81,7 +76,7 @@ struct CameraLibraryView: View {
                         Text("Алматы").tag("almaty")
                     }
                     .pickerStyle(.menu)
-                    Text("Актау: проверяемые HLS-потоки. Алматы: два новых HLS-кандидата и страницы Шымбулака. Астана: встроенный эфир Atameken Business. Семей: нестабильный источник без подтверждённого HLS.")
+                    Text("В Астане доступны ссылки на камеры Хан Шатыра, в Алматы — Шымбулака, в Актау — городские камеры XCOM. Для Семея есть страница оператора.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
@@ -143,7 +138,7 @@ struct CameraLibraryView: View {
                                 .padding(.vertical, 4)
                             }
                         }
-                        Text("Камеры без проверенной прямой HLS-ссылки показываются внутри приложения. Для Семея источник нестабилен; у Астаны и Алматы доступность зависит от видеоплеера владельца.")
+                        Text("Камеры без проверенной прямой HLS-ссылки показываются внутри приложения. Воспроизведение на страницах операторов зависит от их плееров.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
@@ -206,9 +201,7 @@ struct CameraLibraryView: View {
                 AddCameraView(api: api)
             }
             .task(id: cityFilter) {
-                if !filteredDirectCameras.isEmpty {
-                    await availability.refresh(filteredDirectCameras)
-                }
+                await availability.refresh(filteredDirectCameras)
             }
             .refreshable {
                 await availability.refresh(filteredDirectCameras)

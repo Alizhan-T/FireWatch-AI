@@ -2,11 +2,11 @@
 
 ## November 2026 final camera / DEMO visualization pass
 
-**Astana**: The first Astana publisher entry is the official Khan Shatyr [Live Cameras page](https://www.khanshatyr.com/ru/camera). This is a **web page**, not a proven, exposed HLS URL; publishing the page does not establish that its embedded video actually decodes on an iPhone. The newer Atameken Business YouTube programme and an older programme remain fallbacks.
+**Astana** has outdoor and indoor Khan Shatyr HLS feeds in the native player. Both returned decodable video segments on 11 November 2026. The [publisher page](https://www.khanshatyr.com/ru/camera) and Atameken Business programmes are also available.
 
 **Green scanner**: Public/personal HLS camera detail views offer an optional green scan-line overlay **only once AVPlayer reports playback**. YouTube camera details offer an optional green line and fire/smoke VFX. Both options are explicitly labelled **DEMO**: the movement is a SwiftUI animation, **not** computer vision, and it does not produce detections, confidence percentages, events or alerts.
 
-**Khan Shatyr training**: In Camera > Astana > Khan Shatyr, the real publisher web page is displayed without fake smoke or fire over website buttons. Use **"Показать учебный пожар и зелёную линию отдельно"** to open a visibly labelled synthetic training scene. In "Имитировать пожар", Khan Shatyr defaults to the same separate training scene, with toggles for flames/smoke and scanner. The user can always open the original camera page in an in-app browser. No frames are captured from the publisher site.
+**Khan Shatyr training**: In Camera > Astana > Khan Shatyr, the real publisher web page is displayed without fake smoke or fire over website buttons. Use **"Показать учебный пожар и зелёную линию отдельно"** to open a visibly labelled synthetic training scene. In "Имитировать пожар", Astana selects a personal city-matched feed first, then the outdoor Khan Shatyr HLS feed. Selecting the publisher-page alternative still offers the separate training scene. The user can always open the original camera page in an in-app browser. No frames are captured from the publisher site.
 
 **Readiness**: Catalogued camera sources never show a green LIVE badge merely because they are listed. The dashboard counts HLS candidates and publisher pages separately from proven playback, and the AI status distinguishes actual Core ML / YOLO availability from a disconnected server or colour heuristic. Demo VFX does not prove smoke/fire.
 

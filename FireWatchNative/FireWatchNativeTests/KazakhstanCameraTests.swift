@@ -13,6 +13,48 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertFalse(HLSManifestProbe.looksLikePlaylist(Data()))
     }
 
+    @MainActor
+    func testNewCityRefreshWinsOverAnOlderProbe() async throws {
+        let camera = try XCTUnwrap(PublicCameraCatalog.candidates.first)
+        let availability = KazakhstanCameraAvailability()
+        let started = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        let oldRefresh = Task {
+            await availability.refresh([camera]) { _ in
+                started.continuation.finish()
+                for await _ in release.stream {}
+                return .unavailable
+            }
+        }
+        for await _ in started.stream {}
+        XCTAssertEqual(availability.status(for: camera.id), .checking)
+        await availability.refresh([camera]) { _ in .playlistAvailable }
+        release.continuation.finish()
+        await oldRefresh.value
+        XCTAssertFalse(availability.checking)
+        XCTAssertEqual(availability.status(for: camera.id), .playlistAvailable)
+    }
+
+    @MainActor
+    func testCancelledProbeRestoresPreviousStatus() async throws {
+        let camera = try XCTUnwrap(PublicCameraCatalog.candidates.first)
+        let availability = KazakhstanCameraAvailability()
+        await availability.refresh([camera]) { _ in .playlistAvailable }
+        let started = AsyncStream<Void>.makeStream()
+        let refresh = Task {
+            await availability.refresh([camera]) { _ in
+                started.continuation.finish()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                return .unavailable
+            }
+        }
+        for await _ in started.stream {}
+        refresh.cancel()
+        await refresh.value
+        XCTAssertFalse(availability.checking)
+        XCTAssertEqual(availability.status(for: camera.id), .playlistAvailable)
+    }
+
     func testCoreMLClassMappingUsesActualCheckpointOrder() {
         let reverse = ["0": "smoke", "1": "fire"]
         XCTAssertEqual(OnDeviceFireDetector.resolvedLabel("0", labelsByID: reverse), "smoke")
@@ -33,6 +75,16 @@ final class KazakhstanCameraTests: XCTestCase {
             $0.id == "astana-atameken-city-2026" && $0.youtubeVideoID == "sR4YuJ-6UO4"
         })
         XCTAssertTrue(astana.contains { $0.id == "astana-atameken-live" })
+    }
+
+    func testAstanaFilterIncludesBothDirectKhanShatyrFeeds() {
+        let feeds = PublicCameraCatalog.candidates.filter { $0.catalogCityID == "astana" }
+        XCTAssertEqual(Set(feeds.map(\.url)), [
+            "https://shatyr-stream.smarty.kz/cam1/index.m3u8?cookieCheck=1",
+            "https://shatyr-stream.smarty.kz/cam2/index.m3u8?cookieCheck=1"
+        ])
+        let cityIDs = Set(KazakhstanCities.all.map(\.id))
+        XCTAssertTrue(PublicCameraCatalog.candidates.allSatisfy { cityIDs.contains($0.catalogCityID) })
     }
 
     func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {

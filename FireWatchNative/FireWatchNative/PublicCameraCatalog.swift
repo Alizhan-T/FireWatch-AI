@@ -9,6 +9,8 @@ enum PublicCameraCatalog {
     static let akzhaiykVideoURL = "https://www.youtube.com/live/CmtFHHCJbOo"
     static let akzhaiykAnnouncementURL = "https://informburo.kz/novosti/za-proisxodiashhim-v-rezervate-akzaiyk-teper-mozno-nabliudat-onlain"
 
+    static let khanShatyrPage = "https://www.khanshatyr.com/ru/camera"
+
     static let candidates: [CameraCandidate] = [
         CameraCandidate(
             id: "almaty-shymbulak-1",
@@ -34,6 +36,32 @@ enum PublicCameraCatalog {
             catalog_url: "https://cam-world.ru/geo/asia/kazahstan/almaty",
             stream_list_url: streamListURL,
             verification_note: "Исторически опубликованный URL. Работоспособность в 2026 не подтверждена.",
+            verified: false
+        ),
+        CameraCandidate(
+            id: "astana-khan-shatyr-outside",
+            name: "Астана — Хан Шатыр, наружная камера",
+            url: "https://shatyr-stream.smarty.kz/cam2/index.m3u8?cookieCheck=1",
+            lat: 51.1325,
+            lon: 71.4039,
+            source_name: "Хан Шатыр",
+            source_url: khanShatyrPage,
+            catalog_url: khanShatyrPage,
+            stream_list_url: khanShatyrPage,
+            verification_note: "Поток с официальной страницы ТРЦ. Отметка на карте указывает на комплекс.",
+            verified: false
+        ),
+        CameraCandidate(
+            id: "astana-khan-shatyr-inside",
+            name: "Астана — Хан Шатыр, внутренняя камера",
+            url: "https://shatyr-stream.smarty.kz/cam1/index.m3u8?cookieCheck=1",
+            lat: 51.1325,
+            lon: 71.4039,
+            source_name: "Хан Шатыр",
+            source_url: khanShatyrPage,
+            catalog_url: khanShatyrPage,
+            stream_list_url: khanShatyrPage,
+            verification_note: "Поток с официальной страницы ТРЦ. Отметка на карте указывает на комплекс.",
             verified: false
         ),
         CameraCandidate(

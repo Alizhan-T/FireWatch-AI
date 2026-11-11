@@ -77,6 +77,16 @@ final class KazakhstanCameraTests: XCTestCase {
         XCTAssertTrue(astana.contains { $0.id == "astana-atameken-live" })
     }
 
+    func testAstanaFilterIncludesBothDirectKhanShatyrFeeds() {
+        let feeds = PublicCameraCatalog.candidates.filter { $0.catalogCityID == "astana" }
+        XCTAssertEqual(Set(feeds.map(\.url)), [
+            "https://shatyr-stream.smarty.kz/cam1/index.m3u8?cookieCheck=1",
+            "https://shatyr-stream.smarty.kz/cam2/index.m3u8?cookieCheck=1"
+        ])
+        let cityIDs = Set(KazakhstanCities.all.map(\.id))
+        XCTAssertTrue(PublicCameraCatalog.candidates.allSatisfy { cityIDs.contains($0.catalogCityID) })
+    }
+
     func testAstanaPublisherFallbackDoesNotMasqueradeAsHLS() {
         let cameras = KazakhstanPublisherCameras.candidates.filter { $0.cityID == "astana" }
         XCTAssertGreaterThanOrEqual(cameras.count, 2)

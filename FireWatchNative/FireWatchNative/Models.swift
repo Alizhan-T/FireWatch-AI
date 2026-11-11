@@ -97,6 +97,9 @@ struct CameraCandidate: Decodable, Identifiable {
     let stream_list_url: String
     let verification_note: String
     let verified: Bool
+
+    // Bundled camera IDs start with their KazakhstanCities identifier.
+    var catalogCityID: String { String(id.prefix { $0 != "-" }) }
 }
 
 struct MonitoringStatus: Decodable {

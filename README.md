@@ -37,7 +37,7 @@ The publicly listed HLS URLs are dependent on independent providers; FireWatch c
 The camera picker now includes **Astana, Almaty, Semey and Aktau**:
 - Aktau: seven public direct HTTPS HLS streams.
 - Almaty: two *newly probed* Shymbulak HTTPS HLS streams and publisher alternatives. A GitHub Actions manifest test on 10 November 2026 received valid HLS playlists from **9/9** catalogue links (seven Aktau + two Almaty), but this is **not** proof that video segments render on a physical iPhone, that streams remain available, or that the operators permit automatic analysis.
-- Astana: a published Atameken Business city livestream shown inside the app using a YouTube embed; the owner may block embedding or terminate the live session.
+- Astana: the outdoor and indoor Khan Shatyr HLS streams open directly in AVPlayer. The publisher page and Atameken Business programmes are also available.
 - Semey: the Central Square Geocam/gorset.kz publisher page is still marked *unstable* and may not play on an iPhone. There is no verified direct HLS for Semey yet.
 
 **DEMO simulation**: Choose «Имитировать пожар», select a city, and tap «Запустить DEMO». FireWatch opens a camera-backed training screen (defaults to a camera from the selected city if available; falls back to an available catalogue option), with an animated **artificial flame/smoke overlay** and persistent, unmissable «DEMO / НЕ РЕАЛЬНЫЙ ПОЖАР» label. The original stream is not changed or recorded. The actual camera city is shown separately from the simulated incident city to avoid confusion.
@@ -56,7 +56,7 @@ Physical-device verification is still required for stream decoding, permissions 
 
 ## Astana playback and reliability update (11 November 2026)
 
-- The Astana publisher catalogue now prioritizes the **Atameken Business “Astana City View 24/7”** YouTube programme published on 24 February 2026 (source: https://www.youtube.com/watch?v=sR4YuJ-6UO4). The January 2026 publisher programme remains a fallback, and the Khan Shatyr publisher page remains an explicitly unverified alternative. YouTube may have ended either stream or prohibited embedding; **neither is a verified direct HLS feed**.
+- The official Khan Shatyr camera page publishes two direct HLS feeds for Astana. On 11 November 2026, both yielded a decodable video frame in a network check. FireWatch uses the published entry URLs so the player can obtain a fresh session for each connection. [Publisher page](https://www.khanshatyr.com/ru/camera).
 - The iPhone offers two separate ways to view a publisher's content inside FireWatch: a standard YouTube embed and a tapped in-app Safari publisher browser. The embedded request identifies the FireWatch project with an HTTP Referer as required by [YouTube's embed policy](https://support.google.com/youtube/answer/171780?hl=en) to avoid error 153; successful playback still depends on the publisher. It reports web loading failures; a loaded page is not proof of live decoded frames. No DRM bypass or media extraction.
 - Add your own permitted HLS stream under **Cameras → Connect my HLS camera** and choose **Astana** as the actual city. The DEMO scenario will prefer a city-matched personal HLS feed before public publisher alternatives. Previously saved personal links without a city remain supported.
 - The AVPlayer live stream controller now watches media playback time to notice a frozen stream when AVPlayer still reports “playing”. Reconnects remain bounded and can fail if the source is actually offline; network diagnostics and the retry button remain available.

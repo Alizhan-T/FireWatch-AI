@@ -11,6 +11,8 @@ struct IncidentDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var error: String?
     @State private var player: AVPlayer?
+    @State private var downloadedVideoURL: URL?
+    @State private var videoFailed = false
 
     init(api: API, incident: Incident) {
         self.api = api
@@ -49,6 +51,8 @@ struct IncidentDetailView: View {
                     if incident.media_type == "video" {
                         if let player {
                             VideoPlayer(player: player).frame(height: 220)
+                        } else if videoFailed {
+                            ContentUnavailableView("Видео недоступно", systemImage: "video.slash")
                         } else {
                             ProgressView("Загружаем видео…")
                         }
@@ -110,21 +114,34 @@ struct IncidentDetailView: View {
             }
             Button("Отмена", role: .cancel) {}
         }
-        .onAppear {
-            if incident.media_type == "video", let mediaPath = incident.media_url {
-                Task {
-                    do {
-                        let localURL = try await api.downloadMedia(for: mediaPath)
-                        player = AVPlayer(url: localURL)
-                    } catch {
-                        self.error = error.localizedDescription
-                    }
+        .task(id: incident.media_url) {
+            guard incident.media_type == "video", let mediaPath = incident.media_url else { return }
+            videoFailed = false
+            do {
+                let localURL = try await api.downloadMedia(for: mediaPath)
+                if Task.isCancelled {
+                    try? FileManager.default.removeItem(at: localURL)
+                    return
                 }
+                if let previous = downloadedVideoURL {
+                    try? FileManager.default.removeItem(at: previous)
+                }
+                downloadedVideoURL = localURL
+                player = AVPlayer(url: localURL)
+            } catch is CancellationError {
+                return
+            } catch {
+                videoFailed = true
+                self.error = error.localizedDescription
             }
         }
         .onDisappear {
             player?.pause()
             player = nil
+            if let localURL = downloadedVideoURL {
+                try? FileManager.default.removeItem(at: localURL)
+                downloadedVideoURL = nil
+            }
         }
     }
 }

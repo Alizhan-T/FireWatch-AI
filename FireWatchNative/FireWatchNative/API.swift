@@ -40,6 +40,8 @@ final class API: ObservableObject {
     @Published private(set) var lastSuccessfulSync: Date?
     @Published var error: String?
     @Published private(set) var configurationRevision = 0
+    private var activeRefreshTask: Task<Void, Never>?
+    private var activeRefreshRevision: Int?
 
     func saveURL(_ address: String, key: String) throws {
         let cleaned = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,6 +52,9 @@ final class API: ObservableObject {
             throw FireWatchAPIError.invalidServerURL
         }
         configurationRevision += 1
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        activeRefreshRevision = nil
         loading = false
         isConnected = false
         // Never show incidents/camera data from the previous server while switching.
@@ -68,6 +73,9 @@ final class API: ObservableObject {
     /// Explicitly enable the standalone iPhone mode without deleting saved HLS links.
     func useWithoutServer() {
         configurationRevision += 1
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        activeRefreshRevision = nil
         loading = false
         baseURL = ""
         UserDefaults.standard.removeObject(forKey: "firewatch.server")
@@ -204,30 +212,44 @@ final class API: ObservableObject {
             error = nil
             return
         }
-        guard !loading else { return }
-        loading = true
         let revision = configurationRevision
-        defer { if revision == configurationRevision { loading = false } }
-        let endpointURL = baseURL
-        do {
-            async let h: ServerHealth = request("/health")
-            async let i: [Incident] = request("/incidents?limit=100")
-            async let c: [Camera] = request("/cameras")
-            async let s: Stats = request("/stats")
-            let (serverHealth, serverIncidents, serverCameras, serverStats) = try await (h, i, c, s)
-            guard revision == configurationRevision && baseURL == endpointURL else { return }
-            health = serverHealth
-            incidents = serverIncidents
-            cameras = serverCameras
-            stats = serverStats
-            isConnected = serverHealth.status == "ok" && serverHealth.database == true
-            lastSuccessfulSync = Date()
-            error = isConnected ? nil : "Сервер доступен, но база данных или часть сервисов работает с ошибкой."
-        } catch {
-            guard revision == configurationRevision && baseURL == endpointURL else { return }
-            isConnected = false
-            self.error = error.localizedDescription
+        if let existing = activeRefreshTask, activeRefreshRevision == revision {
+            await existing.value
+            return
         }
+        let endpointURL = baseURL
+        let task = Task { @MainActor in
+            loading = true
+            defer {
+                if revision == configurationRevision {
+                    loading = false
+                    activeRefreshTask = nil
+                    activeRefreshRevision = nil
+                }
+            }
+            do {
+                async let h: ServerHealth = request("/health")
+                async let i: [Incident] = request("/incidents?limit=100")
+                async let c: [Camera] = request("/cameras")
+                async let s: Stats = request("/stats")
+                let (serverHealth, serverIncidents, serverCameras, serverStats) = try await (h, i, c, s)
+                guard revision == configurationRevision && baseURL == endpointURL else { return }
+                health = serverHealth
+                incidents = serverIncidents
+                cameras = serverCameras
+                stats = serverStats
+                isConnected = serverHealth.status == "ok" && serverHealth.database == true
+                lastSuccessfulSync = Date()
+                error = isConnected ? nil : "Сервер доступен, но база данных или часть сервисов работает с ошибкой."
+            } catch {
+                guard revision == configurationRevision && baseURL == endpointURL else { return }
+                isConnected = false
+                self.error = error.localizedDescription
+            }
+        }
+        activeRefreshTask = task
+        activeRefreshRevision = revision
+        await task.value
     }
 
     func setMonitoring(enabled: Bool) async throws -> MonitoringStatus {

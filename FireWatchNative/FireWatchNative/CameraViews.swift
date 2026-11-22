@@ -288,11 +288,13 @@ private struct AddCameraView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(saving ? "Сохранение..." : "Добавить") {
-                        guard let parsedURL = URL(string: url),
+                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard let parsedURL = URL(string: trimmedURL),
                               let scheme = parsedURL.scheme?.lowercased(),
                               ["http", "https", "rtsp", "rtsps"].contains(scheme),
                               parsedURL.host != nil,
-                              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                              !trimmedName.isEmpty else {
                             error = "Проверьте название и полный URL камеры."
                             return
                         }
@@ -300,8 +302,8 @@ private struct AddCameraView: View {
                         Task {
                             do {
                                 let city = KazakhstanCities.find(cityID)
-                                _ = try await api.addCamera(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                        streamURL: url.trimmingCharacters(in: .whitespacesAndNewlines),
+                                _ = try await api.addCamera(name: trimmedName,
+                                                        streamURL: trimmedURL,
                                                         lat: city.lat, lon: city.lon)
                                 dismiss()
                             } catch {

@@ -41,6 +41,25 @@ enum OnDeviceFireError: LocalizedError {
 enum OnDeviceFireDetector {
     static let modelName = "fire_smoke_yolov8n"
 
+    private static let cacheLock = NSLock()
+    private static var cachedModelURL: URL?
+    private static var cachedVisionModel: VNCoreMLModel?
+
+    private static func loadVisionModel(at modelURL: URL) throws -> VNCoreMLModel {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if cachedModelURL == modelURL, let cachedVisionModel {
+            return cachedVisionModel
+        }
+        let configuration = MLModelConfiguration()
+        configuration.computeUnits = .all
+        let model = try MLModel(contentsOf: modelURL, configuration: configuration)
+        let visionModel = try VNCoreMLModel(for: model)
+        cachedModelURL = modelURL
+        cachedVisionModel = visionModel
+        return visionModel
+    }
+
     static var isInstalled: Bool {
         Bundle.main.url(forResource: modelName, withExtension: "mlmodelc") != nil
     }
@@ -57,10 +76,7 @@ enum OnDeviceFireDetector {
         let orientation = cgOrientation(for: image.imageOrientation)
         let labelsByID = bundledLabels()
         return try await Task.detached(priority: .userInitiated) {
-            let configuration = MLModelConfiguration()
-            configuration.computeUnits = .all
-            let model = try MLModel(contentsOf: modelURL, configuration: configuration)
-            let visionModel = try VNCoreMLModel(for: model)
+            let visionModel = try loadVisionModel(at: modelURL)
             let request = VNCoreMLRequest(model: visionModel)
             request.imageCropAndScaleOption = .scaleFit
             let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])

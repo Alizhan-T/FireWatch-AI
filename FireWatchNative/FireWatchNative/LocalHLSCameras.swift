@@ -257,6 +257,9 @@ final class HLSPlaybackController: ObservableObject {
                         stalledChecks += 1
                     } else {
                         stalledChecks = 0
+                        if previousTime != nil {
+                            self.attempts = 0
+                        }
                     }
                     previousTime = currentTime
                 } else {

@@ -12,6 +12,7 @@ struct MainView: View {
     @State private var showSettings = false
     @State private var serverAddress = ""
     @State private var serverKey = ""
+    @State private var savingServer = false
     @State private var monitoringBusy = false
     @State private var selectedTab = 0
     @State private var selectedPublicCamera: CameraCandidate?
@@ -172,25 +173,6 @@ struct MainView: View {
         }
     }
 
-    private var incidents: some View {
-        NavigationStack {
-            List(api.incidents) { incident in
-                NavigationLink {
-                    IncidentDetailView(api: api, incident: incident)
-                } label: {
-                    IncidentRow(incident: incident)
-                }
-            }
-            .overlay {
-                if api.incidents.isEmpty {
-                    ContentUnavailableView("Событий нет", systemImage: "flame.slash")
-                }
-            }
-            .navigationTitle("События")
-            .refreshable { await api.refresh() }
-        }
-    }
-
     private var settings: some View {
         NavigationStack {
             Form {
@@ -202,14 +184,29 @@ struct MainView: View {
                     SecureField("API key (если включён на сервере)", text: $serverKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Button("Сохранить и проверить") {
+                    Button {
                         do {
                             try api.saveURL(serverAddress, key: serverKey)
-                            showSettings = false
                         } catch {
                             api.error = error.localizedDescription
+                            return
+                        }
+                        savingServer = true
+                        Task {
+                            await api.refresh()
+                            savingServer = false
+                            if api.isConnected {
+                                showSettings = false
+                            }
+                        }
+                    } label: {
+                        if savingServer {
+                            ProgressView("Проверяем подключение…")
+                        } else {
+                            Text("Сохранить и проверить")
                         }
                     }
+                    .disabled(savingServer)
                     if let error = api.error {
                         Text(error).font(.footnote).foregroundStyle(.red)
                     }
@@ -309,30 +306,5 @@ struct MainView: View {
                 }
             }
         }
-    }
-}
-
-private struct IncidentRow: View {
-    let incident: Incident
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "flame.fill")
-                .foregroundStyle(incident.severity == "critical" ? .red : .orange)
-                .frame(width: 36, height: 36)
-                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(incident.title).font(.subheadline.bold())
-                Text(incident.location_name ?? "Координаты: \(incident.lat), \(incident.lon)")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    Text(incident.status.uppercased())
-                    if incident.is_demo { Text("DEMO").foregroundStyle(.orange) }
-                }
-                .font(.caption2.bold()).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(incident.severity.uppercased()).font(.caption2.bold()).foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 6)
     }
 }

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 310" width="1200" height="310" role="img" aria-label="FireWatch AI — Native iOS Camera Map &amp; YOLOv8n Fire/Smoke Detection">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0C10" />
+      <stop offset="55%" stop-color="#13161F" />
+      <stop offset="100%" stop-color="#1E110E" />
+    </linearGradient>
+    <radialGradient id="emberGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF521F" stop-opacity="0.34" />
+      <stop offset="48%" stop-color="#F59E0B" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#FF521F" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="accentLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF521F" />
+      <stop offset="50%" stop-color="#FB923C" />
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.15" />
+    </linearGradient>
+    <linearGradient id="ringStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF521F" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.22" />
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#94A3B8" stroke-opacity="0.06" stroke-width="1" />
+    </pattern>
+  </defs>
+
+  <!-- Card Surface -->
+  <rect x="0" y="0" width="1200" height="310" rx="18" fill="url(#bg)" />
+  <rect x="0" y="0" width="1200" height="310" rx="18" fill="url(#grid)" />
+  <rect x="1" y="1" width="1198" height="308" rx="17" fill="none" stroke="#27272A" stroke-width="2" />
+
+  <!-- Radar + Flame/Shield Emblem (Right Side) -->
+  <g transform="translate(975, 155)">
+    <circle cx="0" cy="0" r="150" fill="url(#emberGlow)" />
+    <circle cx="0" cy="0" r="102" fill="none" stroke="url(#ringStroke)" stroke-width="1.5" stroke-dasharray="10 6" />
+    <circle cx="0" cy="0" r="76" fill="none" stroke="#FB923C" stroke-opacity="0.35" stroke-width="1.5" />
+    <line x1="-102" y1="0" x2="102" y2="0" stroke="#FF521F" stroke-opacity="0.14" stroke-width="1" />
+    <line x1="0" y1="-102" x2="0" y2="102" stroke="#FF521F" stroke-opacity="0.14" stroke-width="1" />
+    <!-- Protective Flame + Negative-Space Shield matching FireWatch AppIcon -->
+    <g transform="translate(-54, -58) scale(0.105)">
+      <path d="M512 154 C695 248, 675 352, 670 450 C649 504, 721 509, 720 422 C842 546, 827 648, 805 673 C773 768, 612 843, 512 882 C412 843, 251 768, 219 673 C196 567, 233 474, 304 420 C293 502, 354 504, 354 450 C348 340, 482 278, 512 154 Z" fill="#FF521F" />
+      <path d="M512 516 C552 554, 600 564, 647 569 C655 702, 585 774, 512 802 C439 774, 369 702, 377 569 C424 564, 472 554, 512 516 Z" fill="#13161F" />
+      <path d="M512 577 C570 638, 566 655, 546 679 C528 699, 512 724, 512 739 C512 727, 496 699, 478 679 C458 655, 454 638, 512 577 Z" fill="#FF521F" />
+    </g>
+    <circle cx="76" cy="0" r="3.5" fill="#FF521F" />
+    <circle cx="-54" cy="-54" r="3" fill="#FB923C" />
+    <circle cx="0" cy="102" r="3" fill="#F59E0B" />
+  </g>
+
+  <!-- Top Eyebrow -->
+  <g transform="translate(64, 56)">
+    <rect x="0" y="-14" width="296" height="26" rx="13" fill="#FF521F" fill-opacity="0.14" stroke="#FF521F" stroke-opacity="0.4" stroke-width="1" />
+    <circle cx="15" cy="-1" r="4" fill="#FF521F" />
+    <text x="27" y="3" fill="#FDBA74" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600" letter-spacing="0.8">iOS 17+ · KAZAKHSTAN · v1.0.0</text>
+  </g>
+
+  <!-- Title & Subtitle -->
+  <text x="64" y="138" fill="#F8FAFC" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="-1.2">FireWatch AI</text>
+  <rect x="64" y="156" width="420" height="3" rx="1.5" fill="url(#accentLine)" />
+  <text x="64" y="192" fill="#A1A1AA" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="19" font-weight="400">Native iOS camera map &amp; live HLS viewer with optional FastAPI + YOLOv8n fire/smoke AI</text>
+
+  <!-- Tech Stack Pills -->
+  <g transform="translate(64, 228)" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12.5" font-weight="600">
+    <rect x="0" y="0" width="84" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="42" y="19.5" text-anchor="middle" fill="#F4F4F5">SwiftUI</text>
+
+    <rect x="96" y="0" width="144" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="168" y="19.5" text-anchor="middle" fill="#F4F4F5">MapKit · HLS</text>
+
+    <rect x="252" y="0" width="88" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="296" y="19.5" text-anchor="middle" fill="#F4F4F5">Core ML</text>
+
+    <rect x="352" y="0" width="90" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="397" y="19.5" text-anchor="middle" fill="#F4F4F5">FastAPI</text>
+
+    <rect x="454" y="0" width="92" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="500" y="19.5" text-anchor="middle" fill="#FDBA74">YOLOv8n</text>
+
+    <rect x="558" y="0" width="140" height="30" rx="8" fill="#18181B" stroke="#3F3F46" stroke-width="1" />
+    <text x="628" y="19.5" text-anchor="middle" fill="#F4F4F5">Docker · Caddy</text>
+  </g>
+</svg>
